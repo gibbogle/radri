@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.34931.43
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{6989167D-11E4-40FE-8C1A-2192A86A7E90}") = "radri_main", "radri_main.vfproj", "{1A2C1FD3-30F3-41AD-A958-F825B2D56CF5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1A2C1FD3-30F3-41AD-A958-F825B2D56CF5}.Debug|x64.ActiveCfg = Debug|x64
+		{1A2C1FD3-30F3-41AD-A958-F825B2D56CF5}.Debug|x64.Build.0 = Debug|x64
+		{1A2C1FD3-30F3-41AD-A958-F825B2D56CF5}.Debug|x86.ActiveCfg = Debug|Win32
+		{1A2C1FD3-30F3-41AD-A958-F825B2D56CF5}.Debug|x86.Build.0 = Debug|Win32
+		{1A2C1FD3-30F3-41AD-A958-F825B2D56CF5}.Release|x64.ActiveCfg = Release|x64
+		{1A2C1FD3-30F3-41AD-A958-F825B2D56CF5}.Release|x64.Build.0 = Release|x64
+		{1A2C1FD3-30F3-41AD-A958-F825B2D56CF5}.Release|x86.ActiveCfg = Release|Win32
+		{1A2C1FD3-30F3-41AD-A958-F825B2D56CF5}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {455C619C-F41D-4E83-B3B4-430D93E7E6E5}
+	EndGlobalSection
+EndGlobal
