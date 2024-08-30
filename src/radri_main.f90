@@ -82,10 +82,9 @@ if (use_synchronise) then
     endif
 endif
 
-!do synch_phase = 1,3
-do irun = 1,nph   ! 1,1
+do irun = 1,nph
     if (use_synchronise) then
-        synch_fraction = progress(irun)    !(irun-1)*0.2
+        synch_fraction = progress(irun)
         write(*,*)
     	write(*,'(a,2i4,f6.3)') 'radri_main: irun, synch_phase, synch_fraction: ',irun,synch_phase,synch_fraction
     endif
@@ -95,7 +94,6 @@ do irun = 1,nph   ! 1,1
     res = irun
 	call execute(infile,inbuflen,outfile,outbuflen,res)
 	if (res /= 0) stop
-	!call cpu_time(t1)
 	t1 = wtime()
 	write(*,*) 'did execute: nsteps, DELTA_T: ',nsteps, DELTA_T
 	do jstep = 1,Nsteps+1
@@ -117,6 +115,5 @@ do irun = 1,nph   ! 1,1
 	t2 = wtime()
 	write(*,*) 'time: ',t2-t1
 enddo
-!enddo
 end
 

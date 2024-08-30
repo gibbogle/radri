@@ -13,8 +13,6 @@ use cellstate
 
 IMPLICIT NONE
 
-real(REAL_KIND) :: phdist0(NP)
-
 contains 
 
 !-----------------------------------------------------------------------------------------
@@ -31,7 +29,6 @@ type(cycle_parameters_type),pointer :: ccp
 logical :: isopen
 
 ok = .true.
-initialized = .false.
 par_zig_init = .false.
 
 inputfile = infile
@@ -58,8 +55,6 @@ Ndead = 0
 ncells_mphase = 0
 
 t_simulation = 0
-t_lastmediumchange = 0
-medium_change_step = .false.
 allocate(nphase(0:ndays*24,8))
 end subroutine
 
@@ -82,7 +77,6 @@ if (allocated(gaplist)) deallocate(gaplist)
 if (allocated(nphase)) deallocate(nphase)
 if (allocated(Psurvive)) deallocate(Psurvive)
 
-!nsteps_per_min = 1.0/DELTA_T
 ngaps = 0
 nlist = 0
 
@@ -130,40 +124,20 @@ type(cycle_parameters_type),pointer :: ccp
 logical :: write_hourly_results
 
 ok = .true.
-!Vsite_cm3 = 0.2000E-08  ! from spheroid - to retain same scaling 
 
 open(nfcell,file=inputfile,status='old')
-!read(nfcell,'(a)') header
-!if (header(1:3) == 'GUI') then
-!	gui_run_version = header
-!	header = 'DD/MM/YYYY header_string'
-!else
-!	read(nfcell,*) gui_run_version				! program run version number
-!endif
-!read(nfcell,*) dll_run_version				! DLL run version number 
-!write(*,*) dll_run_version
 read(nfcell,*) initial_count				! initial number of tumour cells
-!read(nfcell,*) iuse_lognormal
 read(nfcell,*) divide_time_median(1)
 read(nfcell,*) divide_time_shape(1)
 read(nfcell,*) ndays							! number of days to simulate
 read(nfcell,*) DELTA_T						! time step size (sec)
-!read(nfcell,*) Vcell_pL                     ! nominal cell volume in pL
-!read(nfcell,*) well_area                    ! well bottom area (cm^2)
-!read(nfcell,*) medium_volume0				! initial total volume (cm^3)
 read(nfcell,*) seed(1)						! seed vector(1) for the RNGs
 read(nfcell,*) seed(2)						! seed vector(2) for the RNGs
 Ncelltypes = 1
-celltype_fraction(1) = 1.0
 
 call ReadCellCycleParameters(nfcell)
 
 call ReadMcParameters(nfcell)
-!call ReadDrugData(nfcell)
-!if (use_events) then
-!	call ReadProtocol(nfcell)
-!	use_treatment = .false.
-!endif
 call ReadProtocol(nfcell)
 is_radiation = .false.
 close(nfcell)
@@ -189,17 +163,11 @@ endif
 
 Nsteps = ndays*24*60*60/DELTA_T		! DELTA_T in seconds
 
-ok = .true.
-
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-! The cell cycle parameters include the parameters for radiation damage and repair, 
-! and for the associated checkpoint duration limits Tcp(:).
+! The cell cycle parameters include the parameters for radiation damage and repair. 
 ! Time unit = hour
-! Note: Now with the log-normal phase times there are no checkpoint delays except those
-! created by cell damage (e.g. by radiation.)  Therefore now the mean cycle time is just the
-! sum of G1, S, G2 and M times.
 !-----------------------------------------------------------------------------------------
 subroutine ReadCellCycleParameters(nf)
 integer :: nf
@@ -280,208 +248,20 @@ elseif (drug_conc == 0) then
     washout_time_h = 0           ! this signals that there is no washout
 endif
 read(nf,*) radiation_dose
-write(*,*) 'radiation_dose: ',radiation_dose
 end subroutine
-
-#if 0
-!-----------------------------------------------------------------------------------------
-!-----------------------------------------------------------------------------------------
-subroutine ReadDrugData(nf)
-integer :: nf
-!integer :: idrug, im, ictyp, ival
-
-write(nflog,*) 'ReadDrugData'
-!idrug = 1
-!read(nf,'(a)') drug(idrug)%classname        ! not used
-!read(nf,*) drug(idrug)%nmetabolites		
-!drug(idrug)%use_metabolites = (drug(idrug)%nmetabolites > 0)
-!drug(idrug)%phase_dependent = .false.
-!drug(idrug)%active_phase = .false.
-!do im = 0,drug(idrug)%nmetabolites		! 0 = parent, 1 = metab_1, 2 = metab_2
-!	read(nf,'(a)') drugname
-!	if (im == 0) then
-!		drug(idrug)%name = drugname
-!	endif
-!    drug(idrug)%halflife(im) = 0
-!    if (drug(1)%halflife(0) == 0) then  ! 0 flags no decay of the drug
-!        Khalflife = 0
-!    else
-!        Khalflife = 0.693/drug(1)%halflife(0)
-!    endif
-!    use_drug_halflife = (Khalflife > 0)
-!enddo
-end subroutine
-
-!-----------------------------------------------------------------------------------------
-! Experimental actions are called "events".
-! "flushing" = "washout", removing the drug from the medium.
-!-----------------------------------------------------------------------------------------
-subroutine ReadProtocol(nf)
-integer :: nf
-integer :: itime, ntimes, kevent, ichemo, idrug, im, kevent_flush, drop_event
-character*(64) :: line
-character*(16) :: drugname
-character*(1)  :: numstr
-character*(1) :: fullstr
-real(REAL_KIND) :: t, dt, vol, conc, O2conc, O2flush, dose, O2medium, glumedium
-type(event_type) :: E, Eflush
-logical :: flushing
-
-total_volume = medium_volume0
-flushing = .false.
-do
-	read(nf,'(a)') line
-	if (trim(line) == 'PROTOCOL') exit
-enddo
-read(nf,*) ntimes
-if (ntimes == 0) then
-	Nevents = 0
-	return
-endif
-Nevents = ntimes
-if (allocated(event)) deallocate(event)
-allocate(event(2*ntimes))
-kevent = 0
-do itime = 1,ntimes
-	read(nf,'(a)') line
-	write(nflog,'(a)') line
-	if (trim(line) == 'DRUG') then
-		kevent = kevent + 1
-		event(kevent)%etype = DRUG_EVENT
-		read(nf,'(a)') line
-		write(nflog,'(a)') line
-		drugname = trim(line)
-		read(nf,*) t
-		read(nf,*) dt
-		read(nf,*) vol
-		read(nf,*) O2conc
-		read(nf,*) O2flush
-		read(nf,*) conc
-		event(kevent)%time = t
-		event(kevent)%volume = vol
-		event(kevent)%conc = conc
-		event(kevent)%O2conc = O2conc
-		event(kevent)%dose = 0
-		event(kevent)%full = .false.	
-		write(nflog,'(a,i3,2f8.3)') 'define DRUG_EVENT: volume, O2conc: ',kevent,event(kevent)%volume,event(kevent)%O2conc
-
-!        if (.not.(idrug == 1 .and. use_inhibiter)) then     ! the flushing MEDIUM_EVENT is not added if the drug is an inhibiter
-!		    kevent = kevent + 1
-            flushing = .true.
-            if (dt < 0) then    ! this signals a CDTD expt for which CA_time = washout time, i.e. Cho1 only.  Otherwise CA_time takes the input parameter value.
-                dt = -dt
-                CA_time_h = dt
-            endif
-		    Eflush%etype = MEDIUM_EVENT
-		    Eflush%time = t + dt
-		    Eflush%ichemo = 0
-		    Eflush%volume = total_volume
-		    Eflush%conc = 0
-		    Eflush%O2medium = O2flush		
-		    Eflush%full = .false.	
-		    Eflush%dose = 0
-		    write(nflog,'(a,i3,2f8.3)') 'define MEDIUM_EVENT: volume: ',kevent,Eflush%volume,Eflush%O2medium
-!		endif
-	elseif (trim(line) == 'MEDIUM') then
-		kevent = kevent + 1
-		event(kevent)%etype = MEDIUM_EVENT
-		read(nf,*) t
-		read(nf,*) vol
-		read(nf,*) fullstr
-		read(nf,*) O2medium
-		read(nf,*) glumedium
-		event(kevent)%time = t
-		event(kevent)%volume = vol	
-		event(kevent)%ichemo = 0
-		event(kevent)%O2medium = O2medium
-		event(kevent)%full = (trim(fullstr) == 'Y' .or. trim(fullstr) == 'y')
-		event(kevent)%dose = 0
-		write(nflog,'(a,i3,2f8.3)') 'define MEDIUM_EVENT: volume: ',kevent,event(kevent)%volume,event(kevent)%O2medium
-	elseif (trim(line) == 'RADIATION') then
-!        is_radiation = .true.      ! moved to ProcessEvent
-		kevent = kevent + 1
-		event(kevent)%etype = RADIATION_EVENT
-		read(nf,*) t
-		if (use_synchronise) then
-		    t = 0.001   ! might need to be > 0
-        endif
-        CA_time_h = CA_time_h + t
-		read(nf,*) dose
-		event(kevent)%time = t
-		event(kevent)%dose = dose	
-		event(kevent)%ichemo = 0
-		event(kevent)%volume = 0
-		event(kevent)%conc = 0
-		if (use_PEST .and. nphase_hours > 0) then
-		    phase_hour(1:nphase_hours) = t + phase_hour(1:nphase_hours)
-		endif
-		write(nflog,'(a,i3,a,f6.1,a,f6.2)') 'Radiation event: ', kevent,'  dose: ',dose,' hour: ',t
-        IR_time_h = t
-	endif
-enddo
-Nevents = kevent
-if (flushing) then  ! add the flushing event - for now assume only one
-    kevent_flush = 0
-    do kevent = 1,Nevents
-        if (Eflush%time < event(kevent)%time) then
-            kevent_flush = kevent
-            exit
-        endif
-    enddo
-    if (kevent_flush == 0) then     ! add event after all other events
-        event(Nevents+1) = Eflush
-    else                            ! insert event at kevent_flush
-        do kevent = Nevents,kevent_flush,-1
-            event(kevent+1) = event(kevent)
-        enddo
-        event(kevent_flush) = Eflush
-    endif
-    Nevents = Nevents+1
-endif
-            
-do kevent = 1,Nevents
-	event(kevent)%done = .false.
-	event(kevent)%time = event(kevent)%time*60*60
-	E = event(kevent)
-enddo
-! Check that events are sequential
-do kevent = 1,Nevents-1
-	if (event(kevent)%time >= event(kevent+1)%time) then
-		write(nflog,'(a,2(i4,f6.2))') 'Error: non-sequential event: ',kevent,event(kevent)%time,kevent+1,event(kevent+1)%time
-		stop
-	endif
-enddo
-end subroutine
-#endif
 
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
 subroutine PlaceCells(ok)
 logical :: ok
-integer :: kcell, k, ichemo, ityp, site(3), phase, kpar = 0
-real(REAL_KIND) :: rsite(3)
-real(REAL_KIND) :: fract(0:8), total
-real(REAL_KIND) :: kt2cc_min, kt2cc_max, kcc2a_sum
-!integer :: phase_count(0:8), hour
-integer :: counts(NP)
+integer :: kcell
 type(cell_type), pointer :: cp
 type(cycle_parameters_type),pointer :: ccp
 	
 ccp => cc_parameters(1)
-counts = 0
-lastID = 0
-kcell = 0
-Ncells_type = 0
 t_irradiation = -1
-rsite = [0.,0.,0.]
-kt2cc_min = 9999
-kt2cc_max = 0
-kcc2a_sum = 0
 do kcell = 1,initial_count
-	call AddCell(kcell,rsite)
-    cp => cell_list(kcell)
-	kt2cc_min = min(kt2cc_min,cp%kt2cc)
-	kt2cc_max = max(kt2cc_max,cp%kt2cc)
+	call AddCell(kcell)
 enddo
 nlist = kcell-1
 Ncells = nlist
@@ -493,11 +273,10 @@ end subroutine
 
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
-subroutine AddCell(kcell, rsite)
+subroutine AddCell(kcell)
 integer :: kcell
-real(REAL_KIND) :: rsite(3)
-integer :: ityp, k, kpar = 0
-real(REAL_KIND) :: v(3), c(3), R1, R2, Tdiv, Vdiv, p(3), R, gfactor, kfactor
+integer :: ityp, kpar = 0
+real(REAL_KIND) :: R, kfactor
 real(8) :: kcc2a_std = 0.7
 type(cell_type), pointer :: cp
 type(cycle_parameters_type),pointer :: ccp
@@ -549,8 +328,8 @@ integer :: kcell
 type(cell_type), pointer :: cp
 type(cycle_parameters_type), pointer :: ccp
 integer :: ityp, kpar = 0
-real(REAL_KIND) :: Tc, Tmean, scale, b, t, R, tswitch(3), rVmax, fg(4), metab, f_CP, fp(4)
-real(REAL_KIND) :: T_G1, T_S, T_G2, T_M, tleft, Vleft, Vphase, dth
+real(REAL_KIND) :: Tc, Tmean, scale, b, t, R, tswitch(3), fg(4), metab, f_CP, fp(4)
+real(REAL_KIND) :: T_G1, T_S, T_G2, T_M, tleft, Vleft, dth
 
 ityp = cp%celltype
 ccp => cc_parameters(ityp)
@@ -572,7 +351,6 @@ if (test_run) then
 else
     T_M = cp%mitosis_duration
 endif
-!write(nflog,'(a,i6,6f8.3)') 'kcell,Tc,Tmean,T_G1,T_S,T_G2,T_M: ',kcell,Tc/3600,Tmean/3600,T_G1/3600,T_S/3600,T_G2/3600,T_M/3600
 if (use_cell_kcc2a_dependence) then
     cp%Kcc2a = get_Kcc2a(kmccp,CC_tot,CC_threshold_factor,T_G2/3600)
     cp%Kcc2a = min(cp%kcc2a, 0.9*CC_threshold)
@@ -600,8 +378,6 @@ tswitch(1) = T_G1
 tswitch(2) = tswitch(1) + T_S
 tswitch(3) = tswitch(2) + T_G2
 
-rVmax = max_growthrate(ityp)
-
 if (t < tswitch(1)) then
     cp%phase = G1_phase
     cp%fp = fp(1)
@@ -615,8 +391,7 @@ elseif (t <= tswitch(3)) then
     cp%fp = fp(3)
     cp%progress = (t - tswitch(2))/T_G2
     tleft = tswitch(3) - t
-    Vphase = rVmax*T_G2*fp(3)
-    if (use_Jaiswal) then   ! need to initialise CC_act
+    if (use_Jaiswal) then
         cp%DSB = 0
         dth = (t - tswitch(2))/3600
         call Jaiswal_update(cp,dth)
@@ -630,51 +405,7 @@ else    ! cell in mitosis
     cp%phase = dividing
 endif
 cp%t_divide_last = -t
-
 end subroutine
-
-#if 0
-!----------------------------------------------------------------------------------
-!----------------------------------------------------------------------------------
-subroutine ProcessEvent(radiation_dose)
-integer :: kevent, ichemo, idrug, im, nmetab
-real(REAL_KIND) :: radiation_dose
-type(event_type) :: E
-logical :: full
-logical :: is_event
-integer :: kcell
-type(cell_type), pointer :: cp
-
-radiation_dose = -1
-is_event = .false.
-do kevent = 1,Nevents
-	E = event(kevent)
-	if (t_simulation >= E%time .and. .not.E%done) then
-		write(nflog,'(a,i3,2f8.0,i3,2f10.4)') 'Event: ',E%etype,t_simulation,E%time,E%ichemo,E%volume,E%conc
-		if (E%etype == RADIATION_EVENT) then
-			radiation_dose = E%dose
-			write(nflog,'(a,i3,f8.1,f8.3)') 'RADIATION_EVENT: kevent, time, dose: ',kevent,t_simulation/3600,E%dose
-			write(*,'(a,i3,f8.1,f8.3)') 'RADIATION_EVENT: kevent, time, dose: ',kevent,t_simulation/3600,E%dose
-            is_radiation = .true.
-            is_event = .true.
-		elseif (E%etype == MEDIUM_EVENT) then
-!			write(nflog,'(a,f8.0,f8.3,2f8.4)') 'MEDIUM_EVENT: time, volume, O2medium: ',t_simulation,E%volume,E%O2medium
-            write(nflog,'(a,f8.1)') 'Drug washout: time: ',t_simulation/3600
-            write(*,'(a,f8.1)') 'Drug washout: time: ',t_simulation/3600
-!            call washoutSF
-            drug_conc = 0
-            is_event = .true.
-		!elseif (E%etype == DRUG_EVENT) then
-		!	idrug = E%idrug
-  !          drug_conc = E%conc
-  !          is_event = .true.
-  !          drug_time = t_simulation
-		endif
-		event(kevent)%done = .true.
-	endif
-enddo
-end subroutine
-#endif
 
 !-----------------------------------------------------------------------------------------
 ! Advance simulation through one time step (DELTA_T)
@@ -683,12 +414,11 @@ subroutine simulate_step(res) BIND(C)
 !DEC$ ATTRIBUTES DLLEXPORT :: simulate_step  
 use, intrinsic :: iso_c_binding
 integer(c_int) :: res
-integer :: kcell, site(3), hour, nthour, kpar=0
+integer :: kcell, hour, nthour, kpar=0
 real(REAL_KIND) :: r(3), rmax, tstart, dt, dts, diam_um, framp, area, diam
 integer :: i, ic, ichemo, ndt, iz, idrug, ityp, idiv, ndiv, NpreCA, Nd, Nnew
 integer :: nvars, ns, nphaseh(8), ph
-real(REAL_KIND) :: DELTA_T_save, t_sim_0, SFlive
-!real(REAL_KIND) :: C_O2, HIF1, PDK1
+real(REAL_KIND) :: SFlive
 type(cell_type), pointer :: cp
 integer :: phase_count(0:4), nG2
 real(REAL_KIND) :: total
@@ -737,7 +467,6 @@ if (washout_time_h > 0 .and. drug_conc > 0) then     ! check for washout time
         write(*,'(a,f8.1)') 'Drug washout: time: ',t_simulation/3600
         write(nflog,'(a,f8.3)') 'drug exposure time: ',(t_simulation - t_irradiation)/3600
         write(nflog,*) 'npar_uni, npar_rnor = ',npar_uni,npar_rnor
-!        write(nfres,'(a,i6,f8.3)') 'washout: ',istep,t_simulation/3600
         drug_conc = 0
     endif
 endif
@@ -755,7 +484,6 @@ if (compute_cycle) then
     total = sum(phase_count)
     phase_dist = 100*phase_count/total
 endif
-!if (compute_cycle .or. output_DNA_rate) then
 if (compute_cycle) then
     if (next_phase_hour > 0) then  ! check if this is a phase_hour
         if (real(istep)/nthour >= phase_hour(next_phase_hour)) then   ! record phase_dist
@@ -769,10 +497,6 @@ if (compute_cycle) then
 	        if (compute_cycle) then
                 recorded_phase_dist(next_phase_hour,1:4) = 100*phase_dist(1:4)/sum(phase_dist(1:4))
 	        endif
-	        !if (output_DNA_rate) then
-	        !    call get_DNA_synthesis_rate(DNA_rate)
-	        !    recorded_DNA_rate(next_phase_hour) = DNA_rate
-	        !endif
             next_phase_hour = next_phase_hour + 1
             if (next_phase_hour > nphase_hours) next_phase_hour = 0
         endif
@@ -790,7 +514,6 @@ if (dbug .or. mod(istep,nthour) == 0) then
     nphase(hour,:) = nphaseh
 	write(*,'(a,i6,i4,4(a,i8))') 'istep, hour: ',istep,hour,' Nlive: ',Ncells
 	write(nflog,'(a,i6,i4,4(a,i8))') 'istep, hour: ',istep,hour,' Nlive: ',Ncells
-!    write(nflog,*) 'npar_uni,npar_rnor: ',npar_uni,npar_rnor
     call get_phase_distribution(phase_count)
     total = sum(phase_count(1:4))
     phase_dist = 100*phase_count/total
@@ -938,26 +661,8 @@ enddo
 write(*,*) 'Total nondivided: ',n
 end subroutine
 
-#if 0
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
-subroutine medras_compare()
-type(cell_type), pointer :: cp
-real(8) :: totDSB, Paber, Pmit, Psurvive
-
-cp => cell_list(1)
-totDSB = sum(cp%DSB(1:3))
-write(nflog,'(a,3f8.3)') 'N_DSB, totNmis, Nlethal: ',totDSB,cp%Nlethal/Klethal,cp%Nlethal
-Paber = exp(-cp%Nlethal)
-Pmit = exp(-mitRate*totDSB)
-Psurvive = Pmit*Paber  
-write(nflog,'(a,3f8.4)') 'Paber, Pmit, Psurvive: ',Paber, Pmit, Psurvive
-end subroutine
-#endif
-
-!-----------------------------------------------------------------------------------------
-!-----------------------------------------------------------------------------------------
-!function getSFlive result(SF)
 subroutine getSFlive(SF)
 real(REAL_KIND) :: SF
 real(REAL_KIND) :: sfsum, totDSB, total, total0
@@ -977,10 +682,6 @@ do kcell = 1,nlist
     n = n+1
     sfsum = sfsum + cp%Psurvive
     totDSB = sum(cp%DSB)
-!    if (abs(totDSB - cp%totDSB0) > 1) then
-!        write(nflog,'(a,i6,2f8.0)') 'getSFlive: totDSB,totDSB0: ',kcell,totDSB,cp%totDSB0
-!    endif
-!    if (kcell <= 10) write(nflog,'(a,i6,2f9.1)') 'totDSB0,totDSB: ',kcell,cp%totDSB0,totDSB
     total = total + totDSB
     total0 = total0 + cp%totDSB0
     if (cp%Psurvive < 0) then
@@ -988,12 +689,7 @@ do kcell = 1,nlist
         stop
     endif
 enddo
-!write(nflog,*) 'getSFlive: n, Nirradiated: ',n, Nirradiated
-! n = Nirradiated - Napop
 SF = sfsum/n
-!write(nflog,'(a,2f10.1)') 'getSFlive: initial,final DSB totals: ',total0,total
-!write(*,'(a,i6,4e12.3)') 'n,Ave totDSB,Pmit,Nlethal,Paber: ',n,totDSB/n, totPmit/n, totNlethal/n, totPaber/n
-!end function
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -1009,7 +705,6 @@ end subroutine
 ! For PEST runs, use_SF corresponds to 'M' fitting
 !-----------------------------------------------------------------------------------------
 subroutine completed
-!real(REAL_KIND) :: fract(0:4)
 integer :: kcell, ph, nir(4), nmitosis,nsum, kcellmax, i, j, k, ityp
 real(REAL_KIND) :: sftot_phase(4), sfsum, sfmax
 type(cycle_parameters_type), pointer :: ccp
@@ -1144,16 +839,12 @@ write(nflog,'(a,4f10.5)') 'SFtot_phase: ',SFtot_phase
 write(nflog,'(a,i6,f10.5)') 'Nmitosis,SFtot: ',Nmitosis,sum(SFtot_phase)
 ! adjust for pre-rep doubling of misjoins
 totNmisjoins(1) = 2*totNmisjoins(1)
-if (use_equal_mitrates) then
-    write(nflog,*) 
-    write(nflog,*) '!!!! use_equal_mitrates = true !!!!'
-    write(nflog,*)
-endif
 write(nflog,'(a,7f9.3)') 'Ave (pre, post) NDSB, Nmisjoins: ', &
     totNDSB/nmitosis,totNmisjoins/nmitosis,sum(totNmisjoins)/nmitosis
 write(*,'(a,7f9.3)') 'Ave (pre, post) NDSB, Nmisjoins: ', &
     totNDSB/nmitosis,totNmisjoins/nmitosis,sum(totNmisjoins)/nmitosis
 
+#if 0
 if (.false.) then   ! make this true to write BBB lines
     ! Averages
     SFMave = 0
@@ -1172,6 +863,7 @@ if (.false.) then   ! make this true to write BBB lines
     SFMave = SFMave/nlist
     ave = ave/nlist
 endif
+#endif
 
 99 continue
 if (use_synchronise) call G2_time_distribution()
@@ -1212,6 +904,7 @@ do k = 1,40
 enddo
 end subroutine
 
+#if 0
 !-----------------------------------------------------------------------------------------
 ! This is for drm_monolayer_deriv.exe
 !-----------------------------------------------------------------------------------------
@@ -1223,6 +916,7 @@ integer :: dist(:)
 SF = SFave
 dist = phase_dist
 end subroutine
+#endif
 
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
@@ -1275,7 +969,6 @@ else
     write(nflog,*) 'Setup error'
 	res = 1
 endif
-execute_t1 = wtime()
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -1304,17 +997,6 @@ logical :: isopen
 
 ierr = 0
 if (allocated(gaplist)) deallocate(gaplist,stat=ierr)
-if (allocated(protocol)) then
-	do idrug = 0,2	!<------  change this to a variable 
-		if (allocated(protocol(idrug)%tstart)) deallocate(protocol(idrug)%tstart)
-		if (allocated(protocol(idrug)%tend)) deallocate(protocol(idrug)%tend)
-		if (allocated(protocol(idrug)%conc)) deallocate(protocol(idrug)%conc)
-		if (allocated(protocol(idrug)%dose)) deallocate(protocol(idrug)%dose)
-		if (allocated(protocol(idrug)%started)) deallocate(protocol(idrug)%started)
-		if (allocated(protocol(idrug)%ended)) deallocate(protocol(idrug)%ended)
-	enddo
-	deallocate(protocol)
-endif
 
 ! Close all open files
 inquire(unit=nfout,OPENED=isopen)
@@ -1329,20 +1011,6 @@ if (isopen) close(nfphase)
 if (par_zig_init) then
 	call par_zigfree
 endif
-end subroutine
-
-!-----------------------------------------------------------------------------------------
-!-----------------------------------------------------------------------------------------
-subroutine counter
-integer :: kcell, iph, counts(4)
-
-counts = 0
-do kcell = 1,Ncells
-    iph = cell_list(kcell)%phase
-    iph = min (iph,M_phase)
-    counts(iph) = counts(iph) + 1
-enddo
-write(nflog,'(a,5i6)') 'counter, istep: ',istep,counts  
 end subroutine
 
 end module

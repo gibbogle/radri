@@ -2,10 +2,8 @@
 
 module global
 
-!use omp_lib
 use real_kind_mod
 use par_zig_mod
-!use winsock
 use, intrinsic :: ISO_C_BINDING
 
 implicit none
@@ -23,105 +21,30 @@ integer, parameter :: DEAD = 3
 integer, parameter :: DIVIDED = 4
 
 integer, parameter :: G1_phase      = 1
-integer, parameter :: G1_checkpoint = 6
 integer, parameter :: S_phase       = 2
-integer, parameter :: S_checkpoint  = 7
 integer, parameter :: G2_phase      = 3
-integer, parameter :: G2_checkpoint = 8
 integer, parameter :: M_phase       = 4
 integer, parameter :: dividing      = 5
+! checkpoint phases are no longer used, instead phase progress is slowed
+integer, parameter :: G1_checkpoint = 6
+integer, parameter :: S_checkpoint  = 7
+integer, parameter :: G2_checkpoint = 8
 
 integer, parameter :: nfin=10, nfout=11, nflog=12, nfres=13, nfrun=14, nfcell=15, nftreatment=16, nfphase=17, &
 					  nfpar=18, nftcp=20, nfpest = 21
 
-!integer, parameter :: CFSE = 0
-!integer, parameter :: OXYGEN = 1
-!integer, parameter :: GLUCOSE = 2
-!integer, parameter :: LACTATE = 3       ! dropped
-!integer, parameter :: GLUTAMINE = 4     ! dropped
-!integer, parameter :: OTHERNUTRIENT = 5 ! dropped
-!integer, parameter :: DRUG_A = 3        ! was 6
-!integer, parameter :: TPZ_DRUG = DRUG_A
-!integer, parameter :: TPZ_DRUG_METAB_1 = TPZ_DRUG + 1
-!integer, parameter :: TPZ_DRUG_METAB_2 = TPZ_DRUG + 2
-!integer, parameter :: DRUG_B = DRUG_A + 3
-!integer, parameter :: DNB_DRUG = DRUG_B
-!integer, parameter :: DNB_DRUG_METAB_1 = DNB_DRUG + 1
-!integer, parameter :: DNB_DRUG_METAB_2 = DNB_DRUG + 2
-!!integer, parameter :: MAX_CHEMO = DRUG_B + 2
-!integer, parameter :: NUTS = DRUG_A - 1
-!integer, parameter :: MAX_CHEMO = NUTS + 2
-
-!integer, parameter :: GROWTH_RATE = MAX_CHEMO + 1	! (not used here, used in the GUI)
-!integer, parameter :: CELL_VOLUME = MAX_CHEMO + 2
-!integer, parameter :: O2_BY_VOL = MAX_CHEMO + 3
-!integer, parameter :: CYCLE_PHASE = MAX_CHEMO + 4
-
-!integer, parameter :: N_EXTRA = CYCLE_PHASE - MAX_CHEMO + 1	! = 5 = total # of variables - MAX_CHEMO
-!integer, parameter :: NCONST = MAX_CHEMO
-
-!integer, parameter :: TPZ_CLASS = 1
-!integer, parameter :: DNB_CLASS = 2
-integer, parameter :: DRUG_EVENT = 1
-integer, parameter :: RADIATION_EVENT = 2
-integer, parameter :: MEDIUM_EVENT = 3
-
-!integer, parameter :: DIST_NV = 20
-
-integer, parameter :: EXTRA = 1
-integer, parameter :: INTRA = 2
 integer, parameter :: MAX_CELLTYPES = 2
-integer, parameter :: MAX_DRUGTYPES = 2
 integer, parameter :: max_nlist = 300000
-integer, parameter :: NRF = 4
-integer, parameter :: LIMIT_THRESHOLD = 1500
-
-logical, parameter :: use_ODE_diffusion = .true.
-logical, parameter :: compute_concentrations = .true.
-logical, parameter :: use_division = .true.
-logical, parameter :: use_death = .true.
-logical, parameter :: use_react = .true.
-logical, parameter :: use_migration = .false.	! causing an error with vacant site becoming bdry 
-logical, parameter :: use_medium_flux = .true.	! flux of constituents between spheroid and medium is accounted for.
-logical, parameter :: use_metabolites = .true.
-logical, parameter :: use_celltype_colour = .true.
-
-logical, parameter :: use_Cex_Cin = .true.		! assume equilibrium to derive Cin from Cex
-logical, parameter :: suppress_growth = .false.
-
-logical, parameter :: OFF_LATTICE = .false.
-
 real(REAL_KIND), parameter :: PI = 4.0*atan(1.0)
-!real(REAL_KIND), parameter :: CFSE_std = 0.05
 real(REAL_KIND), parameter :: small_d = 0.1e-4          ! 0.1 um -> cm
-
 
 type cell_type
 	integer :: ID
 	integer :: celltype
-	integer :: site(3)
-	integer :: ivin
 	logical :: active
 	integer :: state
-!	logical :: Iphase
 	logical :: irradiated
-!	real(REAL_KIND) :: f_S_at_IR
-!    integer :: nspheres             ! =1 for Iphase, =2 for Mphase
-!	real(REAL_KIND) :: radius(2)	! sphere radii (um) -> cm
-!	real(REAL_KIND) :: centre(3,2)  ! sphere centre positions
-!	real(REAL_KIND) :: d			! centre separation distance (um) -> cm
 	integer :: generation
-!	real(REAL_KIND) :: conc(MAX_CHEMO)
-!	real(REAL_KIND) :: Cin(MAX_CHEMO)
-!	real(REAL_KIND) :: Cex(MAX_CHEMO)
-!	real(REAL_KIND) :: dCdt(MAX_CHEMO)
-!	real(REAL_KIND) :: dMdt(MAX_CHEMO)      ! mumol/s
-!	real(REAL_KIND) :: CFSE
-!	real(REAL_KIND) :: dVdt             ! actual volume growth rate
-	real(REAL_KIND) :: V			    ! actual volume cm3
-!	real(REAL_KIND) :: growth_rate_factor	! to introduce some random variation 
-!	real(REAL_KIND) :: ATP_rate_factor	! to introduce some random variation 
-	real(REAL_KIND) :: divide_volume	! actual divide volume
 	real(REAL_KIND) :: divide_time      ! cycle time
 	real(REAL_KIND) :: fg(4)			! to make sum(T_G1, T_S, T_G2, T_M) consistent with Tdivide
 	real(REAL_KIND) :: t_divide_last	! these two values are used for colony simulation
@@ -129,31 +52,10 @@ type cell_type
 	real(REAL_KIND) :: t_S_phase
 	real(REAL_KIND) :: birthtime
     real(REAL_KIND) :: t_mitosis		! time from IR to end of mitosis
-!	real(REAL_KIND) :: t_anoxia
-!	real(REAL_KIND) :: t_anoxia_die
-!	real(REAL_KIND) :: t_aglucosia
-!	real(REAL_KIND) :: t_aglucosia_die
-!	real(REAL_KIND) :: M
-!	real(REAL_KIND) :: p_rad_death
-!	real(REAL_KIND) :: p_drug_death(MAX_DRUGTYPES)
 	real(REAL_KIND) :: t_start_mitosis
 	real(REAL_KIND) :: t_start_G2
 	real(REAL_KIND) :: G2_time
 	real(REAL_KIND) :: mitosis
-	real(REAL_KIND) :: CP_delay
-!	logical :: growth_delay
-!	real(REAL_KIND) :: dt_delay
-!	real(REAL_KIND) :: t_growth_delay_end	! this is for suppression of growth before first division
-!	integer :: N_delayed_cycles_left		! decremented by 1 at each cell division
-!	real(REAL_KIND) :: tag_time             ! time cell is tagged to die metabolically
-!	logical :: radiation_tag    !, ATP_tag, GLN_tag
-!	logical :: drug_tag(MAX_DRUGTYPES)
-!	real(REAL_KIND) :: apoptosis_delay
-!	integer :: rad_state    ! 0 = pre-radiation or post-mitosis, I > 0 = radiated in phase I: G1 = 1, S = 2, G2 = 3
-!	logical :: G2_M
-!	logical :: exists
-!	integer :: cnr(3,8)
-!	real(REAL_KIND) :: wt(8)
 
 	! Cell cycle 
     integer :: phase
@@ -175,83 +77,13 @@ type cycle_parameters_type
     real(REAL_KIND) :: T_G1, T_S, T_G2, T_M
 end type
 
-#if 0
-type drug_type
-	character*(3)   :: classname
-	integer         :: drugclass
-	character*(16)  :: name
-	integer         :: nmetabolites
-	logical         :: use_metabolites
-	real(REAL_KIND) :: diff_coef(0:2)
-	real(REAL_KIND) :: medium_diff_coef(0:2)
-	real(REAL_KIND) :: membrane_diff_in(0:2)
-	real(REAL_KIND) :: membrane_diff_out(0:2)
-	real(REAL_KIND) :: halflife(0:2)
-	logical         :: kills(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: Kmet0(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: C2(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: KO2(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: n_O2(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: Vmax(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: Km(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: Klesion(MAX_CELLTYPES,0:2)
-	integer         :: kill_model(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: death_prob(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: Kd(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: kill_O2(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: kill_drug(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: kill_duration(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: kill_fraction(MAX_CELLTYPES,0:2)
-	logical         :: sensitises(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: SER_max(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: SER_Km(MAX_CELLTYPES,0:2)
-	real(REAL_KIND) :: SER_KO2(MAX_CELLTYPES,0:2)
-	
-	logical :: phase_dependent
-	logical :: active_phase(6)
-end type
-#endif
-
 type dist_type
 	integer :: class
 	real(REAL_KIND) :: p1, p2, p3
 end type
 
-
-type treatment_type
-	integer :: ichemo
-	integer :: n
-!	character*(16) :: name
-	real(REAL_KIND), allocatable :: tstart(:)
-	real(REAL_KIND), allocatable :: tend(:)
-	real(REAL_KIND), allocatable :: conc(:)
-	real(REAL_KIND), allocatable :: dose(:)
-	logical, allocatable :: started(:)
-	logical, allocatable :: ended(:)
-end type
-
-type event_type
-	integer :: etype
-	real(REAL_KIND) :: time
-	integer :: idrug				! DRUG
-	integer :: ichemo				! DRUG CHEMO INDEX
-	real(REAL_KIND) :: volume		! DRUG MEDIUM
-	real(REAL_KIND) :: conc			! DRUG
-	real(REAL_KIND) :: O2conc		! DRUG
-	real(REAL_KIND) :: O2flush		! DRUG
-	real(REAL_KIND) :: dose			! RADIATION
-	real(REAL_KIND) :: O2medium		! MEDIUM
-	real(REAL_KIND) :: glumedium	! MEDIUM
-	real(REAL_KIND) :: lacmedium	! MEDIUM
-	logical :: full
-	logical :: done
-end type	
-
 type(dist_type) :: divide_dist(MAX_CELLTYPES)
 type(cell_type), allocatable, target :: cell_list(:)
-type(treatment_type), allocatable :: protocol(:)	! needed?
-type(event_type), allocatable :: event(:)
-type(cell_type), target, allocatable :: ccell_list(:)
 
 integer :: initial_count
 
@@ -260,22 +92,13 @@ integer :: Ncells_type(MAX_CELLTYPES), Ndying(MAX_CELLTYPES), Nviable(MAX_CELLTY
 
 type(cycle_parameters_type), target :: cc_parameters(MAX_CELLTYPES)
 
-integer :: istep, ndays, nsteps, it_solve, NT_CONC, NT_GUI_OUT, show_progeny, ichemo_curr, NT_DISPLAY
+integer :: istep, ndays, nsteps 
 integer :: Mnodes
-integer :: Nevents
-real(REAL_KIND) :: DELTA_T, DELTA_X, fluid_fraction, Vsite_cm3, Vextra_cm3, Vcell_pL, tnow, DT_DISPLAY
-real(REAL_KIND) :: Vcell_cm3, medium_volume0, total_volume, well_area, t_lastmediumchange
-real(REAL_KIND) :: celltype_fraction(MAX_CELLTYPES)
-integer :: selected_celltype
-logical :: celltype_display(MAX_CELLTYPES)
-real(REAL_KIND) :: MM_THRESHOLD, anoxia_threshold, t_anoxia_limit, anoxia_death_delay, Vdivide0, dVdivide
-real(REAL_KIND) :: aglucosia_threshold, t_aglucosia_limit, aglucosia_death_delay, max_growthrate(MAX_CELLTYPES)
+real(REAL_KIND) :: DELTA_T, tnow   
 real(REAL_KIND) :: divide_time_median(MAX_CELLTYPES), divide_time_shape(MAX_CELLTYPES), divide_time_mean(MAX_CELLTYPES)
-real(REAL_KIND) :: t_simulation, execute_t1
+real(REAL_KIND) :: t_simulation
 real(REAL_KIND) :: start_wtime
 real(REAL_KIND) :: IR_time_h, CA_time_h, washout_time_h
-
-!type(drug_type), target :: drug(1)
 
 integer, allocatable :: gaplist(:)
 integer :: ngaps, ndivided
@@ -283,20 +106,11 @@ integer, parameter :: max_ngaps = 200000
 
 character*(2048) :: inputfile
 character*(2048) :: outputfile
-character*(2048) :: logmsg
-character*(1024) :: header
 
-logical :: stopped, clear_to_send
-logical :: simulation_start, par_zig_init, initialized
-logical :: use_radiation, use_treatment
-logical :: synchronise
+logical :: simulation_start, par_zig_init
 logical :: is_radiation
 logical :: use_gaplist = .true.
-logical :: medium_change_step
-logical :: fully_mixed
 logical :: dbug = .false.
-
-logical :: use_events = .true.
 
 integer :: seed(2)
 integer :: kcell_now
@@ -333,7 +147,6 @@ real(REAL_KIND), parameter :: dose_threshold = 1
 integer :: ATR_in_S = 1		! 0 = no ATR signalling in S, 1 = signalling, no CP effect, 2 = signalling and CP effect
 logical, parameter :: use_Arnould = .true.
 real(REAL_KIND) :: R_Arnould = 0.7, Kclus = 0.693	! for DSB clustering
-logical :: use_equal_mitrates = .false.
 logical :: use_cell_kcc2a_dependence = .true.
 
 logical :: compute_cycle
@@ -410,23 +223,6 @@ write(nflog,*) 'ERROR: random_choice: ',N,p
 stop
 end function
 
-!-----------------------------------------------------------------------------------------
-! Returns a unit vector with random 3D direction
-!-----------------------------------------------------------------------------------------
-subroutine get_random_vector3(v)
-real(REAL_KIND) :: v(3)
-real(REAL_KIND) :: R1, R2, s, a
-integer :: kpar=0
-
-R1 = par_uni(kpar)
-R2 = par_uni(kpar)
-s = sqrt(R2*(1-R2))
-a = 2*PI*R1
-v(1) = 2*cos(a)*s
-v(2) = 2*sin(a)*s
-v(3) = 1 - 2*R2
-end subroutine
-
 !--------------------------------------------------------------------------------
 ! Returns a permutation of the elements of a()
 !--------------------------------------------------------------------------------
@@ -440,22 +236,6 @@ do i = 1,n
 	a(i) = a(k)
 	a(k) = tmp
 enddo
-end subroutine
-
-!-----------------------------------------------------------------------------------------
-!-----------------------------------------------------------------------------------------
-subroutine waste_time(n,dummy)
-integer :: k, n
-real(REAL_KIND) :: dummy
-real(REAL_KIND) :: rsum,R
-integer :: kpar=0
-
-rsum = 0
-do k = 1,n
-    R = par_uni(kpar)
-    rsum = rsum + R
-enddo
-dummy = rsum
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -499,29 +279,27 @@ end subroutine
 !-----------------------------------------------------------------------------------------
 subroutine set_phase_times(cp)
 type(cell_type), pointer :: cp
-real(REAL_KIND) :: Tdiv, fg(4), Tfixed, Tinter, rVmax, V
+real(REAL_KIND) :: Tdiv, fg(4), Tinter, Tinter_ave
 real(REAL_KIND) :: T_G1, T_S, T_G2, T_M
-integer :: ityp, kpar=0
+integer :: ityp
 type(cycle_parameters_type), pointer :: ccp
 
 ityp = cp%celltype
 ccp => cc_parameters(ityp)
 
-rVmax = max_growthrate(ityp)
-
-fg(M_phase) = 1.0
-!T_S = ccp%T_S
 T_M = cp%mitosis_duration
-Tfixed = T_M
 Tdiv = DivideTime(ityp)     ! log-normally distributed r.v.
 Tdiv = min(Tdiv,1.2*divide_time_median(ityp))	! limit max divide time
-Tinter = Tdiv - Tfixed
-T_G1 = Tinter*ccp%T_G1/(ccp%T_G1 + ccp%T_S + ccp%T_G2)	! G1, S and G2 times are scaled mean phase times
-T_S = Tinter*ccp%T_S/(ccp%T_G1 + ccp%T_S + ccp%T_G2)
-T_G2 = Tinter*ccp%T_G2/(ccp%T_G1 + ccp%T_S + ccp%T_G2)
+Tinter = Tdiv - T_M
+Tinter_ave = ccp%T_G1 + ccp%T_S + ccp%T_G2
+T_G1 = Tinter*ccp%T_G1/Tinter_ave	! G1, S and G2 times are scaled mean phase times
+T_S = Tinter*ccp%T_S/Tinter_ave
+T_G2 = Tinter*ccp%T_G2/Tinter_ave
+! Note: fg(phase) is actually independent of phase for G1, S, G2 = Tinter/Tinter_ave
 fg(G1_phase) = T_G1/ccp%T_G1
 fg(S_phase) = T_S/ccp%T_S
 fg(G2_phase) = T_G2/ccp%T_G2
+fg(M_phase) = 1.0
 cp%divide_time = Tdiv   ! cycle time, varies with cell
 cp%fg = fg
 end subroutine	
@@ -589,22 +367,6 @@ rv_lognormal = exp(z)
 end function
 
 !--------------------------------------------------------------------------------------
-! For testing.
-!--------------------------------------------------------------------------------------
-real(REAL_KIND) function my_rnor()
-real(REAL_KIND) :: sum, R
-integer :: k
-integer :: kpar=0
-
-sum = 0
-do k = 1,12
-    R = par_uni(kpar)
-    sum = sum + R
-enddo
-my_rnor = sum - 6.0
-end function
-
-!--------------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------------
 real(REAL_KIND) function rv_exponential(lambda,kpar)
 real(REAL_KIND) :: lambda
@@ -643,9 +405,7 @@ if (single_cell .or. test_run .OR. use_no_random) then
 else
     t = rv_normal(ccp%T_M, mitosis_std, 0)
 endif
-!t = 0.43*3600
 t = max(t,0.0)
-!write(*,'(a,f8.3)') 'mitosis_duration: ',t/3600
 end function
 
 
@@ -720,7 +480,6 @@ do
 enddo
 nlist = nlist - ngaps
 ngaps = 0
-if (dbug) write(nflog,*) 'squeezed: ',n,nlist
 
 end subroutine
 
