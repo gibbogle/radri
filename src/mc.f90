@@ -152,6 +152,8 @@ read(nfin,*) CC_act0
 read(nfin,*) CC_threshold_factor
 read(nfin,*) norm_factor
 
+CC_threshold = CC_threshold_factor*CC_tot
+
 use_Iliakis = (kIliakis > 0)
 
 use_SF = .false.
