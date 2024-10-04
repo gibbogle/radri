@@ -44,14 +44,14 @@ do i = 1, cnt
         stop
     end if
     if (i == 1) then
-        infile = c(1:nlen)																! --> infile
+        infile = c(1:nlen)
         write(*,*) 'Input file: ',infile
     endif
     use_PEST = .false.
 end do
 if (cnt == 2) then
     call get_command_argument (2, c, nlen, status)
-    PEST_outputfile = c(1:nlen)
+    PEST_outputfile = c(1:nlen)     ! PEST is the parameter estimation program
     use_PEST = .true.
 elseif (cnt /= 1) then
 	write(*,*) 'Error: wrong number of arguments'
@@ -95,7 +95,7 @@ do irun = 1,nph
 	call execute(infile,inbuflen,outfile,outbuflen,res)
 	if (res /= 0) stop
 	t1 = wtime()
-	write(*,*) 'did execute: nsteps, DELTA_T: ',nsteps, DELTA_T
+	write(*,*) 'did execute: nsteps: ',nsteps
 	do jstep = 1,Nsteps+1
 		call simulate_step(res)
 		if (res == 1) then

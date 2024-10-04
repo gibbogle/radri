@@ -57,14 +57,14 @@ do kcell = 1,nlist
 	if (cp%state == DEAD .or. cp%state == DYING) cycle
     ityp = cp%celltype
 	ccp => cc_parameters(ityp)
-	if (use_Iliakis) then
+	if (use_suppression) then
 		if (cp%phase >= S_phase) then
-			fIliakis = kIliakis**nIliakis/(kIliakis**nIliakis + (dose-dose_threshold)**nIliakis)
+			fsup = ksup**nsup/(ksup**nsup + (dose-dose_threshold)**nsup)
 		else
-			fIliakis = 1
+			fsup = 1
 		endif
 	else
-		fIliakis = 1.0
+		fsup = 1.0
 	endif
     call cellIrradiation(cp,dose)
 enddo   
@@ -221,7 +221,6 @@ call set_phase_times(cp1)
 cp1%mitosis = 0
 cp1%phase = G1_phase
 cp1%progress = 0
-cp1%totMis = 0
 cp1%t_divide_last = tnow
 
 ! Jaiswal

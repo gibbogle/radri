@@ -36,7 +36,6 @@ integer, parameter :: nfin=10, nfout=11, nflog=12, nfres=13, nfrun=14, nfcell=15
 integer, parameter :: MAX_CELLTYPES = 2
 integer, parameter :: max_nlist = 300000
 real(REAL_KIND), parameter :: PI = 4.0*atan(1.0)
-real(REAL_KIND), parameter :: small_d = 0.1e-4          ! 0.1 um -> cm
 
 type cell_type
 	integer :: ID
@@ -63,8 +62,8 @@ type cell_type
     
 	! DRM section
 	integer :: phase0
-	real(8) :: pATM, pATR, DSB(NP,2), DSB0(NP,2),totDSB0, totMis
-	real(8) :: Psurvive, psurvive_nodouble, mitosis_time
+	real(8) :: pATM, pATR, DSB(NP,2), DSB0(NP,2),totDSB0
+	real(8) :: Psurvive, mitosis_time
 	real(8) :: Nmis(2)
 	
 	! Jaiswal section (26/09/22)
@@ -167,8 +166,8 @@ integer :: ntrack1 = 0
 integer :: tracked2(500)
 integer :: ntrack2 = 0
 
-!DEC$ ATTRIBUTES DLLEXPORT :: nsteps, use_PEST, PEST_outputfile, DELTA_T
-!DEC$ ATTRIBUTES DLLEXPORT :: use_synchronise, synch_phase, synch_fraction, nfphase
+!DEC$ ATTRIBUTES DLLEXPORT :: nsteps, use_PEST, PEST_outputfile
+!DEC$ ATTRIBUTES DLLEXPORT :: use_synchronise, synch_phase, synch_fraction
 contains
 
 !-----------------------------------------------------------------------------------------
