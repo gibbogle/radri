@@ -19,6 +19,7 @@ integer, parameter :: ALIVE = 1
 integer, parameter :: DYING = 2
 integer, parameter :: DEAD = 3
 integer, parameter :: DIVIDED = 4
+integer, parameter :: EVALUATED = 5
 
 integer, parameter :: G1_phase      = 1
 integer, parameter :: S_phase       = 2
@@ -67,7 +68,7 @@ type cell_type
 	real(8) :: Nmis(2)
 	
 	! Jaiswal section (26/09/22)
-	real(REAL_KIND) :: CC_act, ATR_act, ATM_act, dCC_act_dt, kt2cc, ke2cc, kcc2a
+	real(REAL_KIND) :: CC_act, ATR_act, ATM_act, dCC_act_dt, kccmd, kccrd, kcc
     
 end type
 
@@ -141,16 +142,18 @@ real(REAL_KIND) :: totNmis = 0
 integer :: maxhours = 199
 logical :: overstepped
 
-logical, parameter :: constant_S_pHR = .true.
-real(REAL_KIND), parameter :: dose_threshold = 1
+logical, parameter :: no_S_suppression = .false.	! If true this cancels suppression (Iliakis) effect in S-phase
+real(REAL_KIND), parameter :: dose_threshold = 0
 integer :: ATR_in_S = 1		! 0 = no ATR signalling in S, 1 = signalling, no CP effect, 2 = signalling and CP effect
 logical, parameter :: use_Arnould = .true.
-real(REAL_KIND) :: R_Arnould = 0.7, Kclus = 0.693	! for DSB clustering
-logical :: use_cell_kcc2a_dependence = .true.
+real(REAL_KIND) :: Reffmin, Kclus	! for DSB clustering
+logical :: use_cell_kcc_dependence = .true.
 
 logical :: compute_cycle
-
+logical :: SFdone
+logical, parameter :: allow_second_mitosis = .true.
 real(REAL_KIND) :: mitosis_std = 0.1336*3600     ! Chao 2019, Erlang k=14, L = 28, hours -> seconds
+real(8), parameter :: kmit = 0.023  ! Baide et al., dose = 1 in M --> Psurvive = 0.2
 
 ! Drug half-life simulation
 logical :: use_drug_halflife
@@ -299,8 +302,10 @@ fg(G1_phase) = T_G1/ccp%T_G1
 fg(S_phase) = T_S/ccp%T_S
 fg(G2_phase) = T_G2/ccp%T_G2
 fg(M_phase) = 1.0
+if (single_cell) fg = 1.0   ! mean phase times
 cp%divide_time = Tdiv   ! cycle time, varies with cell
 cp%fg = fg
+if (single_cell) write(nflog,'(a,4f8.4)') 'cp%fg: ',cp%fg
 end subroutine	
 
 !--------------------------------------------------------------------------------------

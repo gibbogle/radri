@@ -55,6 +55,7 @@ Ndead = 0
 ncells_mphase = 0
 
 t_simulation = 0
+SFdone = .false.
 allocate(nphase(0:ndays*24,8))
 end subroutine
 
@@ -126,24 +127,29 @@ logical :: write_hourly_results
 ok = .true.
 
 open(nfcell,file=inputfile,status='old')
+write(*,*) 'Opened: ',trim(inputfile)
 read(nfcell,*) initial_count				! initial number of tumour cells
 read(nfcell,*) divide_time_median(1)
 read(nfcell,*) divide_time_shape(1)
-read(nfcell,*) ndays							! number of days to simulate
+read(nfcell,*) ndays                        ! max number of days to simulate
 read(nfcell,*) DELTA_T						! time step size (sec)
 read(nfcell,*) seed(1)						! seed vector(1) for the RNGs
 read(nfcell,*) seed(2)						! seed vector(2) for the RNGs
+write(*,*) 'seed(2): ',seed(2)
 Ncelltypes = 1
 
 call ReadCellCycleParameters(nfcell)
 
 call ReadMcParameters(nfcell)
+
 call ReadProtocol(nfcell)
+
 is_radiation = .false.
 close(nfcell)
 
-! Try setting this for each cell unless use_cell_kcc2a_dependence
-Kcc2a = get_Kcc2a(kmccp,CC_tot,CC_threshold_factor,cc_parameters(1)%T_G2/3600)
+! Try setting this for each cell unless use_cell_kcc_dependence
+Kcc = get_Kcc(kmccp,CC_tot,CC_threshold_factor,cc_parameters(1)%T_G2/3600)
+write(nflog,*) 'did get_Kcc: ',Kcc
 single_cell = (initial_count==1)
 write(nflog,*) 'single_cell: ',single_cell
 
@@ -216,9 +222,11 @@ Tc = divide_time_mean(ityp)/3600    ! hours
 b = log(2.0)/Tc
 ccp%T_G1 = -(log(1-ccp%f_G1/2))/b
 ccp%T_S = -(log(1-(ccp%f_G1+ccp%f_S)/2))/b - ccp%T_G1
-ccp%T_M = log(1 + ccp%f_M)/b
-ccp%T_G2 = Tc - ccp%T_G1 - ccp%T_S - ccp%T_M
-write(nflog,'(a,2f8.3)') 'SteelMethod: alt T_G2,T_M: ', -(log(1-(ccp%f_G1+ccp%f_S+ccp%f_G2)/2))/b - ccp%T_G1 - ccp%T_S,Tc - ccp%T_G1 - ccp%T_S - ccp%T_G2
+!ccp%T_M = log(1 + ccp%f_M)/b     ! Smith & Dendy
+!ccp%T_G2 = Tc - ccp%T_G1 - ccp%T_S - ccp%T_M
+ccp%T_G2 = -(log(1-(ccp%f_G1+ccp%f_S+ccp%f_G2)/2))/b - ccp%T_G1 - ccp%T_S
+ccp%T_M = Tc - ccp%T_G1 - ccp%T_S - ccp%T_G2
+write(nflog,'(a,5f7.3)') 'modified SteelMethod mean T G1,S,G2,M, total: ',ccp%T_G1,ccp%T_S,ccp%T_G2,ccp%T_M,ccp%T_G1+ccp%T_S+ccp%T_G2+ccp%T_M
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -227,26 +235,31 @@ subroutine ReadProtocol(nf)
 integer :: nf
 real(REAL_KIND) :: halflife
 character*(16) :: drugname
+integer :: ndrug
 
-read(nf,'(a)') drugname
-read(nf,*) halflife
-write(*,*) 'halflife: ',halflife
-read(nf,*) drug_conc
-write(*,*) 'drug_conc: ',drug_conc
-read(nf,*) washout_time_h
-write(*,*) 'washout_time_h: ',washout_time_h
-if (halflife == 0) then  ! 0 flags no decay of the drug
-    Khalflife = 0
-else
-    Khalflife = 0.693/halflife
+read(nf,*) ndrug
+if (ndrug > 0) then
+    read(nf,'(a)') drugname
+    read(nf,*) halflife
+    write(*,*) 'halflife: ',halflife
+    read(nf,*) drug_conc
+    write(*,*) 'drug_conc: ',drug_conc
+    read(nf,*) washout_time_h
+    write(*,*) 'washout_time_h: ',washout_time_h
+    if (halflife == 0) then  ! 0 flags no decay of the drug
+        Khalflife = 0
+    else
+        Khalflife = 0.693/halflife
+    endif
+    use_drug_halflife = (Khalflife > 0)
+    if (washout_time_h < 0) then     ! this signals a CDTD expt for which CA_time = washout time, i.e. Cho1 only.  Otherwise CA_time takes the input parameter value.
+        washout_time_h = -washout_time_h
+        CA_time_h = washout_time_h
+    elseif (drug_conc == 0) then
+        washout_time_h = 0           ! this signals that there is no washout
+    endif
 endif
-use_drug_halflife = (Khalflife > 0)
-if (washout_time_h < 0) then     ! this signals a CDTD expt for which CA_time = washout time, i.e. Cho1 only.  Otherwise CA_time takes the input parameter value.
-    washout_time_h = -washout_time_h
-    CA_time_h = washout_time_h
-elseif (drug_conc == 0) then
-    washout_time_h = 0           ! this signals that there is no washout
-endif
+read(nf,*)
 read(nf,*) radiation_dose
 end subroutine
 
@@ -296,10 +309,10 @@ kcell_now = kcell
 ! Jaiswal
 R = par_uni(kpar)
 kfactor = 1 + (R - 0.5)*jaiswal_std
-cp%kt2cc = kt2cc*kfactor
+cp%kccmd = kccmd*kfactor
 R = par_uni(kpar)
 kfactor = 1 + (R - 0.5)*jaiswal_std
-cp%ke2cc = ke2cc*kfactor
+cp%kccrd = kccrd*kfactor
 
 cp%CC_act = 0
 cp%ATR_act = 0
@@ -343,6 +356,7 @@ fg = cp%fg
 f_CP = 1.0
 fp(:) = f_CP/fg(:)
 T_G1 = ccp%T_G1/fp(1)
+if (single_cell) write(nflog,'(a,6e12.3)') 'fg, ccp%T_G1, T_G1: ',fg, ccp%T_G1, T_G1
 T_S = ccp%T_S/fp(2)
 T_G2 = ccp%T_G2/fp(3)
 if (test_run) then
@@ -350,9 +364,9 @@ if (test_run) then
 else
     T_M = cp%mitosis_duration
 endif
-if (use_cell_kcc2a_dependence) then
-    cp%Kcc2a = get_Kcc2a(kmccp,CC_tot,CC_threshold_factor,T_G2/3600)
-    cp%Kcc2a = min(cp%kcc2a, 0.9*CC_threshold)
+if (use_cell_kcc_dependence) then
+    cp%Kcc = get_Kcc(kmccp,CC_tot,CC_threshold_factor,T_G2/3600)
+    cp%Kcc = min(cp%kcc, 0.9*CC_threshold)
 endif
 
 if (use_synchronise) then
@@ -373,6 +387,7 @@ else
     R = par_uni(kpar)
     t = -(1/b)*log(1 - R/2)     ! cycle progression, log-normal r.v. (t/Tc = fractional progression)
 endif
+if (single_cell) write(nflog,'(a,i4,4e12.3)') 'kcell, R, t, t/Tc, T_G1: ',kcell,R,t,t/Tc,T_G1
 tswitch(1) = T_G1 
 tswitch(2) = tswitch(1) + T_S
 tswitch(3) = tswitch(2) + T_G2
@@ -403,6 +418,12 @@ else    ! cell in mitosis
 	ncells_mphase = ncells_mphase + 1
     cp%phase = dividing
 endif
+if (single_cell) then
+    write(*,*)
+    write(*,*) 'Initial phase, progress: ',cp%phase,cp%progress
+    write(nflog,*) 'Initial phase, progress: ',cp%phase,cp%progress
+    write(*,*)
+endif
 cp%t_divide_last = -t
 end subroutine
 
@@ -424,6 +445,7 @@ real(REAL_KIND) :: total
 real(REAL_KIND) :: fATM, fATR, fCP, ATM_DSB, DNA_rate
 real(REAL_KIND) :: pATM_sum, pATR_sum, DSB_sum
 real(REAL_KIND) :: SFtot, Pp, Pd, newSFtot, total_mitosis_time
+integer :: Ntot, Ndying, Ncont(5),Ngen1
 logical :: PEST_OK
 logical :: ok = .true.
 logical :: dbug
@@ -473,7 +495,7 @@ res = 0
 
 call GrowCells(DELTA_T,t_simulation,ok)
 
-call getNviable
+!call getNviable
 
 kcell = 1
 cp => cell_list(kcell)
@@ -511,8 +533,8 @@ if (dbug .or. mod(istep,nthour) == 0) then
         nphaseh(i) = nphaseh(i) + 1
     enddo
     nphase(hour,:) = nphaseh
-	write(*,'(a,i6,i4,4(a,i8))') 'istep, hour: ',istep,hour,' Nlive: ',Ncells
-	write(nflog,'(a,i6,i4,4(a,i8))') 'istep, hour: ',istep,hour,' Nlive: ',Ncells
+	if (.not. single_cell) write(*,'(a,i6,i4,4(a,2i8))') 'istep, hour: ',istep,hour,' Ncells,nlist: ',Ncells, nlist   
+!	write(nflog,'(a,i6,i4,4(a,i8))') 'istep, hour: ',istep,hour,' Nlive: ',Ncells
     call get_phase_distribution(phase_count)
     total = sum(phase_count(1:4))
     phase_dist = 100*phase_count/total
@@ -546,7 +568,8 @@ PEST_OK = .true.
 if (use_PEST) then  
     PEST_OK = (next_phase_hour == 0)
 endif
-    
+ 
+#if 0   
 if (is_radiation .and. (NPsurvive >= (Nirradiated - Napop - Nmitotic)) .and. PEST_OK) then  !!! needs to change
     ! getSFlive computes the average psurvive for all cells that reach mitosis,
     ! which number NPsurvive = Nirradiated - Napop.
@@ -602,6 +625,57 @@ if (is_radiation .and. (NPsurvive >= (Nirradiated - Napop - Nmitotic)) .and. PES
     call completed
     res = 1
 endif
+#endif
+
+if (SFdone) then
+    Ntot = 0
+    SFtot = 0
+    Ndying = 0
+    Ncont = 0
+    do kcell = 1,nlist
+        cp => cell_list(kcell)
+        Pp = cp%Psurvive
+        if (Pp > 0) then
+            if (cp%mitosis_time < CA_time_h*3600) then  ! adjust for 2 daughters
+                Pd = 1 - sqrt(1.0 - Pp)
+                Ntot = Ntot + 2
+                SFtot = SFtot + 2*Pd
+                if (cp%phase0 == M_phase) then
+                    Ncont(3) = Ncont(3) + 2
+                else
+                    Ncont(1) = Ncont(1) + 2
+                endif
+            else                                        ! no daughter adjustment
+                Ntot = Ntot + 1
+                SFtot = SFtot + Pp
+                if (cp%phase0 == M_phase) then
+                    Ncont(4) = Ncont(4) + 1
+                else
+                    Ncont(2) = Ncont(2) + 1
+                endif
+            endif
+        else                                            ! state = DYING, Psurvive = 0
+            Ntot = Ntot + 1
+            Ndying = Ndying + 1
+            Ncont(5) = Ncont(5) + 1
+        endif
+    enddo
+! Note that: 2 cells are contributed by 1 pre-CA interphase cell (Ncont(1)), 1 by 1 post-CA interphase cell (Ncont(2))
+! 4 cells are contributed by 1 pre-CA surviving mitotic cell (Ncont(3)), 2 by a post-CA surving mitotic cells (Ncont(4))
+! 2 cells are contributed by one dying mitotic cell (Ncont(5))
+! Ncells0 = Ncont(1)/2 + Ncont(2) + Ncont(3)/4 + Ncont(4)/2 + Ncont(5)/2
+
+    SFave = SFtot/Ntot
+    write(*,*)
+    write(nflog,'(a,f8.2)') 'CA_time_h: ',CA_time_h
+    write(nflog,'(a,7i6)') 'Ncont, Ndying, Ncells0: ',Ncont,Ndying,Ncont(1)/2 + Ncont(2) + (Ncont(3)/2 + Ncont(4))/2 + Ncont(5)/2
+    write(nflog,'(a,i6,2x,f8.3)') 'Ntot, SFtot: ',Ntot,SFtot
+    write(nflog,'(a,e12.4,f8.3)') 'SFave,log10(SFave): ',SFave,log10(SFave)
+    write(*,'(a,e12.4,f8.3)') 'SFave,log10(SFave): ',SFave,log10(SFave)
+    call completed
+    res = 1
+endif
+
 
 end subroutine
 
@@ -651,9 +725,9 @@ do kcell = 1,nlist
     cp => cell_list(kcell)
     if (cp%state /= DEAD .and. cp%psurvive < 0) then
         n = n+1
-        write(*,'(a,i6,i3,3f8.4)') 'nondivided: kcell, phase, kt2cc,ke2cc,kcc2a: ',kcell, cp%phase,cp%kt2cc,cp%ke2cc,cp%kcc2a
+        write(*,'(a,i6,i3,3f8.4)') 'nondivided: kcell, phase: ',kcell, cp%phase
         write(*,*) 'fg: ',cp%fg
-        write(nflog,'(a,i6,i3,3f8.4)') 'nondivided: kcell, phase, kt2cc,ke2cc,kcc2a: ',kcell, cp%phase,cp%kt2cc,cp%ke2cc,cp%kcc2a
+        write(nflog,'(a,i6,i3,3f8.4)') 'nondivided: kcell, phase: ',kcell, cp%phase
         write(nflog,*) 'fg: ',cp%fg
     endif
 enddo
@@ -813,6 +887,7 @@ do kcell = 1,nlist
     sftot_phase(ph) = sftot_phase(ph) + cp%Psurvive
 enddo
 nmitosis = sum(nir)
+write(*,'(a,4i6)') 'nir: ',nir
 write(nflog,'(a,6f12.3)') 'totPmit, totPaber, tottotDSB: ',totPmit, totPaber, tottotDSB
 write(*,'(a,i6,5f11.1)') 'Nmitosis, totPmit, totPaber, tottotDSB: ',int(Nmitosis),totPmit, totPaber, tottotDSB
 write(*,'(a,6e12.3)') 'totPaber: ',totPaber

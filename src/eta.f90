@@ -81,11 +81,10 @@ end function
 ! fsmin is Kcoh
 ! Note that the new expression for Reff covers the whole cycle - phase not used.
 !--------------------------------------------------------------------------
-function eta_Arnould(phase,f_S, tIR, Reffmin, S_NHEJ, fsmin) result(eta)
+function eta_Arnould(phase,f_S, tIR, S_NHEJ, fsmin) result(eta)
 integer :: phase
-real(8) :: f_S, tIR, Reffmin, S_NHEJ, fsmin, eta
+real(8) :: f_S, tIR, S_NHEJ, fsmin, eta
 real(8) :: Reff, sigma, fsigma
-logical, parameter :: use_old_method = .false.   ! results the same as new method
 
 Reff = (1 - f_S)*((1 - Reffmin)*exp(-Kclus*tIR) + Reffmin) + f_S*1.26
 fsigma = 1 - (1 - fsmin)*f_S

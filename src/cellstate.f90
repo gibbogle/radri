@@ -33,7 +33,7 @@ integer :: kcell, ityp
 real(REAL_KIND) :: R, total
 integer :: phase_count(0:4)
 real(REAL_KIND) :: ph_dist(0:4), totDSB(2)
-integer :: counts(8)
+integer :: iph, counts(8)
 type(cell_type), pointer :: cp
 type(cycle_parameters_type), pointer :: ccp
 
@@ -44,6 +44,7 @@ write(nflog,'(a,f8.3,i6)') 'Irradiation: t, Nirradiated: ',t_irradiation/3600,Ni
 call get_phase_distribution(phase_count)
 total = sum(phase_count)
 ph_dist = 100*phase_count/total
+write(nflog,'(a,5i6)') 'phase count: ',phase_count
 write(nflog,'(a,5f8.2)') 'phase distribution: ',ph_dist
 
 counts = 0
@@ -53,7 +54,8 @@ Nmitotic = 0
 do kcell = 1,nlist
     kcell_now = kcell
     cp => cell_list(kcell)
-    counts(cp%phase) = counts(cp%phase) + 1
+    iph = min(cp%phase, M_phase)
+    counts(iph) = counts(iph) + 1
 	if (cp%state == DEAD .or. cp%state == DYING) cycle
     ityp = cp%celltype
 	ccp => cc_parameters(ityp)
@@ -63,9 +65,13 @@ do kcell = 1,nlist
 		else
 			fsup = 1
 		endif
+		if (cp%phase == S_phase .and. no_S_suppression) then 
+			fsup = 1
+		endif
 	else
 		fsup = 1.0
 	endif
+	if (kcell == 9) write(nflog,'(a,2i4,4f8.3,L2)') 'Irradiation: kcell,phase,nsup,ksup,dose_threshold,fsup: ',kcell,cp%phase,nsup,ksup,dose_threshold,fsup,use_suppression
     call cellIrradiation(cp,dose)
 enddo   
 total = 0
@@ -73,6 +79,7 @@ do kcell = 1,nlist
     cp => cell_list(kcell)
     total = total + cp%totDSB0
 enddo
+write(*,*) 'Irradiation: phase counts: ',counts(1:4)
 write(nflog,*) 'At irradiation, total DSB: ',total
 end subroutine
 
@@ -105,28 +112,33 @@ end subroutine
 subroutine grower(dt, changed, ok)
 real(REAL_KIND) :: dt
 logical :: changed, ok
-integer :: k, kcell, nlist0, ityp!, kpar=0
+integer :: k, kcell, nlist0, ityp, ndone, kpar=0
 type(cell_type), pointer :: cp
 type(cycle_parameters_type), pointer :: ccp
-real(REAL_KIND) :: mitosis_duration
-integer, parameter :: MAX_DIVIDE_LIST = 100000
-integer :: ndivide, divide_list(MAX_DIVIDE_LIST)
+real(REAL_KIND) :: mitosis_duration, Ntot, PS, R
+!integer, parameter :: MAX_DIVIDE_LIST = 100000
+!integer :: ndivide, divide_list(MAX_DIVIDE_LIST)
 logical :: divide
 
 ok = .true.
 changed = .false.
 nlist0 = nlist
-ndivide = 0
+!ndivide = 0
+
+ndone = 0
+SFdone = .false.
 
 do kcell = 1,nlist0
 	kcell_now = kcell
    	cp => cell_list(kcell)
-    if (cp%state == DIVIDED) cycle
-	if (cp%state == DEAD) cycle
-	if (cp%state == DYING) then
-		cycle
-    endif
+!   if (cp%state == DIVIDED) cycle
+!	if (cp%state == DEAD) cycle
+!	if (cp%state == DYING) then
+!		cycle
+!   endif
     
+    if (use_SF .and. cp%state == EVALUATED) cycle
+	ndone = ndone + 1
     ! start cell simulation----------------------------------------------------------
 	ityp = cp%celltype
 	ccp => cc_parameters(ityp)
@@ -142,7 +154,8 @@ do kcell = 1,nlist0
 		ncells_mphase = ncells_mphase + 1
         cp%phase = dividing
     endif
-	
+
+#if 0	
     if (cp%phase == dividing) then
 		cp%mitosis = (tnow - cp%t_start_mitosis)/mitosis_duration
         if (cp%mitosis >= 1) then
@@ -176,6 +189,54 @@ do k = 1,ndivide
 	call divider(kcell, ok)
 	if (.not.ok) return
 enddo
+#endif
+
+    if (cp%phase == dividing) then
+		cp%mitosis = (tnow - cp%t_start_mitosis)/mitosis_duration
+        if (cp%mitosis >= 1) then
+			cp%G2_time = tnow - cp%t_start_G2
+! if use_SF (i.e. we are computing SF_ave) then only cells not satisfying (is_radiation .and. cp%Psurvive < 0) need to divide
+			if (allow_second_mitosis .and. (cp%phase0 == M_phase)) then		! cell mitotic at IR
+				if (cp%t_divide_last < 0) then
+                    Ntot = sum(cp%DSB)
+					PS = exp(-kmit*Ntot)
+					R = par_uni(kpar)
+					if (R > PS) then	! the cell is fated to die
+						call divider(kcell, DYING, ok)
+					else
+!						divide (1 new cell) and set state = ALIVE for both daughters
+						call divider(kcell, ALIVE, ok)
+					endif
+				else	! cells at M2
+					if (use_SF) then	! evaluate Psurvive
+						if (cp%state == DYING) then		 
+							cp%Psurvive = 0
+							cp%state = EVALUATED
+						else	
+!							evaluate Psurvive, set state = EVALUATED
+							call survivalProbability(cp)				
+							cp%state = EVALUATED
+						endif
+					else
+!						divide (1 new cell) and set state = ALIVE for both daughters
+						call divider(kcell, ALIVE, ok)
+					endif
+				endif
+			else		! non-mitotic cell
+				if (use_SF) then
+!					evaluate Psurvive and set state = EVALUATED
+					call survivalProbability(cp)
+					cp%state = EVALUATED
+				else
+!					divide (1 new cell) and set state = ALIVE for both daughters
+					call divider(kcell, ALIVE, ok)
+                endif
+			endif
+		endif
+	endif
+enddo
+SFdone = (ndone == 0)
+
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -198,8 +259,8 @@ end subroutine
 
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
-subroutine divider(kcell1, ok)
-integer :: kcell1
+subroutine divider(kcell1, newstate, ok)
+integer :: kcell1, newstate
 logical :: ok
 integer :: kcell2, ityp
 type(cell_type), pointer :: cp1, cp2
@@ -211,8 +272,7 @@ ityp = 1
 ccp => cc_parameters(ityp)
 ndivided = ndivided + 1
 cp1 => cell_list(kcell1)
-
-cp1%state = ALIVE
+cp1%state = newstate
 cp1%generation = cp1%generation + 1
 cp1%birthtime = tnow
 kcell_now = kcell1
@@ -225,9 +285,8 @@ cp1%t_divide_last = tnow
 
 ! Jaiswal
 cp1%CC_act = 0
-if (use_cell_kcc2a_dependence) cp1%Kcc2a = get_Kcc2a(kmccp,CC_tot,CC_threshold_factor,cp1%fg(G2_phase)*ccp%T_G2/3600)
+if (use_cell_kcc_dependence) cp1%Kcc = get_Kcc(kmccp,CC_tot,CC_threshold_factor,cp1%fg(G2_phase)*ccp%T_G2/3600)
 cp1%irradiated = (tnow > t_irradiation)
-if (is_radiation .and. use_SF) return   ! in this case there is no need to actually have the cell divide
 cp1%DSB(NHEJslow,:) = cp1%DSB(NHEJslow,:)/2
 cp1%DSB(NHEJfast,:) = 0
 cp1%DSB(HR,:) = 0
@@ -257,7 +316,7 @@ cp2 = cp1
 cp2%mitosis_duration = get_mitosis_duration()
 kcell_now = kcell2
 call set_phase_times(cp2)
-if (use_cell_kcc2a_dependence) cp2%Kcc2a = get_Kcc2a(kmccp,CC_tot,CC_threshold_factor,cp2%fg(G2_phase)*ccp%T_G2/3600)
+if (use_cell_kcc_dependence) cp2%Kcc = get_Kcc(kmccp,CC_tot,CC_threshold_factor,cp2%fg(G2_phase)*ccp%T_G2/3600)
 
 end subroutine
 

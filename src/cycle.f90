@@ -37,6 +37,10 @@ if (cp%phase == G1_phase) then
         cp%phase = S_phase
         cp%progress = 0
         cp%t_S_phase = tnow
+        if (single_cell) then
+            write(*,'(a,2f6.2)') 'S entry: tnow, N_DSB: ',tnow/3600,sum(cp%DSB(1:3,:))
+            write(nflog,'(a,2f6.2)') 'S entry: tnow, N_DSB: ',tnow/3600,sum(cp%DSB(1:3,:))
+        endif
     endif
 elseif (cp%phase == S_phase) then
     cp%progress = cp%progress + cp%fp*dt/ccp%T_S

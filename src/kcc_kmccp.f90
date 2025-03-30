@@ -24,6 +24,7 @@ do
     dfdx = (tmitosis(CC_tot,x+dx,kmccp) - t)/dx
     if (dfdx == 0) exit
     x1 = x - f0/dfdx
+    x1 = max(x1,0.01)   ! prevent x going < 0
     if (abs(x-x1)/x < 0.002) exit
     x = x1
     t = tmitosis(CC_tot,x,kmccp)
@@ -61,16 +62,15 @@ end function
 
 !-------------------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------------------
-function get_Kcc2a(kmccp, CC_tot, CC_threshold_factor, T_G2) result(kcc2a)
-real(8) :: kmccp, CC_tot, CC_threshold_factor, T_G2, kcc2a
+function get_Kcc(kmccp, CC_tot, CC_threshold_factor, T_G2) result(kcc)
+real(8) :: kmccp, CC_tot, CC_threshold_factor, T_G2, kcc
 real(8) :: x0, t0
-real(8),parameter :: alfa = -1.0, beta = 0.45
 
 CC_factor = CC_threshold_factor
-x0 = alfa + beta*kmccp      ! initial guess
+x0 = 0.5      ! initial guess
 t0 = tmitosis(CC_tot,x0,kmccp)
 call newton(x0,t0,CC_tot,kmccp,1.0*T_G2)    ! find x0 = kcc2a such that tmitosis = T_G2
-kcc2a = x0
+kcc = x0
 end function
 
 end module

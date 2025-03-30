@@ -14,18 +14,17 @@ integer, parameter :: TMEJ = 4  ! this is alt-EJ
 character*(2) :: phaseName(4) = ['G1','S ','G2','M ']
 
 real(8) :: Pcomplex = 0.4337    ! fraction of created DSBs that are complex (McMahon: complexFrac)
-real(8) :: pJeggo = 0.9         ! fraction of post-replication DSBs that are fast. (NOT USED)
-real(8) :: Kcoh                 ! cohesin effect (read in input file)
-real(8) :: pHRs_max, pHRc_max, pHRs_G2, pHRc_G2
+real(8) :: Kcoh                 ! cohesin effect 
+real(8) :: pHR_max, f_S_decay
 real(8) :: Preass               ! rate of reassignment to pathway 4, TMEJ (prob of reass/hour)
 logical :: use_sigmoid = .true.
-real(8) :: rmin = 0.1, kdecay = 0.1, ksig = 1, csig = 8.56    ! decay function parameters  TO BE RENAMED
+real(8) :: rmin, kfdecay = 0.1, kdecay, cdecay    ! decay function parameters
 real(8) :: sigma_NHEJ = 0.04187
 real(8) :: sigma_TMEJ = 0.08
 real(8) :: repRate(NP)          ! repair rate parameters
 real(8) :: baseRate
 real(8) :: mitRate(2)           ! (McMahon: mitoticRate) TO BE RENAMED
-real(8) :: Klethal = 0.4
+real(8) :: Klethal
 
 real(8) :: KATM1G1, KATM2G1     ! KATM parameters for G1 CP slowdown
 real(8) :: KATM1G1D, KATM2G1D   ! KATM parameters for post-mitosis G1 CP slowdown
@@ -36,16 +35,19 @@ real(8) :: KATR1S, KATR2S       ! KATR parameters for S ATR_act activation (when
 real(8) :: Chalf    ! inhibitor concentration that halves repair rate 
 
 ! Jaiswal formulation (26/09/22)
-real(8) :: Kcc2a, Kcc2e, Kd2e, Kd2t, Ke2cc, Kt2cc, Kti2t
+!real(8) :: Kcc2a, Kcc2e, Kd2e, Kd2t, Ke2cc, Kt2cc, Kti2t
+real(8) :: Kcc, Krd, Krp, Kmp1, Kmp2, Kccrd, Kccmd, Kmd
 real(8) :: Km1, Km10, Km10t
 real(8) :: kmmp, kmmd               ! ATM production, decay
 real(8) :: kmrp, kmrd               ! ATR production, decay
 real(8) :: kmccp, kmccrd, kmccmd    ! CC production, ATR-driven decay, ATM-driven decay
-real(8) :: CC_tot, ATR_tot, ATM_tot, CC_act0, CC_threshold, CC_threshold_factor
+real(8) :: CC_tot, ATR_tot, ATM_tot, CC_threshold, CC_threshold_factor
 real(8) :: G1_tdelay                ! delay before ATM_act updated (hours)
 logical :: use_Jaiswal = .true.
 logical :: vary_km10 = .true.
 real(8) :: jaiswal_std = 0.6
+real(8) :: G2_D_ATM_max
+real(8) :: t_switch_ATM
 
 real(8) :: repRateFactor(NP)
 
@@ -69,10 +71,13 @@ real(8) :: nsup
 real(8) :: ksup     ! if ksup = 0, fsup = 1
 real(8) :: fsup
 logical :: use_suppression 
+logical :: compute_reprate3 = .true.    ! reprate3 = reprate3_2GY/dose
+real(8) :: reprate3_2GY = 0.28 
+real(8) :: reprate3_max
 
 real(8) :: next_write_time
 
-logical, parameter :: drop_mitotic_cells = .true.
+logical, parameter :: drop_mitotic_cells = .false.
 
 contains
 
@@ -85,47 +90,81 @@ integer :: expt_ID, iph, j
 
 write(*,*) 'ReadMcParameters:'
 read(nfin,*) expt_ID
-read(nfin,*) CA_time_h
-read(nfin,*) baseRate
+write(*,*) 'expt_ID: ',expt_ID
+!read(nfin,*) CA_time_h
+CA_time_h = 18  ! default time, overridden by CDTD input data
+!read(nfin,*) baseRate
+baserate = 0
 read(nfin,*) mitRate(1)
 read(nfin,*) mitRate(2)
 read(nfin,*) Klethal
 
 read(nfin,*) KATM1G1
+read(nfin,*) KATM1S
 read(nfin,*) KATM2G1
+read(nfin,*) KATM2S
 read(nfin,*) KATM1G1D
 read(nfin,*) KATM2G1D
-read(nfin,*) KATM1S
-read(nfin,*) KATM2S
-read(nfin,*) KATR1S
-read(nfin,*) KATR2S
+write(*,*) 'KATM2G1D: ',KATM2G1D
 
-read(nfin,*) repRate(NHEJfast)
-read(nfin,*) repRate(NHEJslow)
-read(nfin,*) repRate(HR)
-read(nfin,*) repRate(TMEJ)
-read(nfin,*) pComplex
-read(nfin,*) Kcoh
-read(nfin,*) pHRs_max
-read(nfin,*) pHRc_max
-read(nfin,*) rmin
-read(nfin,*) ksig
-read(nfin,*) csig
-read(nfin,*) nsup
+!read(nfin,*) KATR1S
+!read(nfin,*) KATR2S
+
+!read(nfin,*) repRate(NHEJfast)
+!read(nfin,*) repRate(NHEJslow)
+!read(nfin,*) repRate(HR)
+!read(nfin,*) repRate(TMEJ)
+!read(nfin,*) pComplex
+!read(nfin,*) Kcoh
+!read(nfin,*) pHRs_max
+
+repRate(NHEJfast) = 2.081
+repRate(NHEJslow) = 0.2604
+repRate(TMEJ) = 0.025
+Pcomplex = 0.43
+Kcoh = 1.0
+read(nfin,*) pHR_max
+write(*,*) 'pHR_max: ',pHR_max
+read(nfin,*) f_S_decay
+!read(nfin,*) rmin
+rmin = 0
+read(nfin,*) kdecay
+read(nfin,*) cdecay
+nsup = 1
+
 read(nfin,*) ksup
-read(nfin,*) G1_tdelay
+G1_tdelay = 0
 read(nfin,*) Chalf
-read(nfin,*) Preass
+Preass = 0
 read(nfin,*) dsigma_dt
 read(nfin,*) sigma_NHEJ
-
-read(nfin,*) Kcc2a
-read(nfin,*) Kcc2e
-read(nfin,*) Kd2e
-read(nfin,*) Kd2t
-read(nfin,*) Ke2cc
-read(nfin,*) Kt2cc
-read(nfin,*) Kti2t
+read(nfin,*) Reffmin
+read(nfin,*) reprate3_max
+read(nfin,*) Kclus
+read(nfin,*) G2_D_ATM_max       ! cap on D_ATM in G2
+read(nfin,*) t_switch_ATM       ! time after IR when ATM_act production goes to 0
+!write(*,*) 'Kclus: ',Kclus
+!read(nfin,*) Kcc2a
+!read(nfin,*) Kcc2e
+!read(nfin,*) Kd2e
+!read(nfin,*) Kd2t
+!read(nfin,*) Ke2cc
+!read(nfin,*) Kt2cc
+!read(nfin,*) Kti2t
+!read(nfin,*) Kmccp
+!read(nfin,*) Kmccmd
+!read(nfin,*) Kmccrd
+!read(nfin,*) Kmrp
+!read(nfin,*) Kmrd
+!read(nfin,*) Kmmp
+!read(nfin,*) Kmmd
+read(nfin,*) Krd
+read(nfin,*) Krp
+read(nfin,*) Kmp1
+read(nfin,*) Kmp2
+read(nfin,*) Kccrd
+read(nfin,*) Kccmd
+read(nfin,*) Kmd
 read(nfin,*) Kmccp
 read(nfin,*) Kmccmd
 read(nfin,*) Kmccrd
@@ -133,12 +172,11 @@ read(nfin,*) Kmrp
 read(nfin,*) Kmrd
 read(nfin,*) Kmmp
 read(nfin,*) Kmmd
-read(nfin,*) CC_tot
+write(*,*) 'Kmmd: ',Kmmd
+CC_tot = 10
 read(nfin,*) ATR_tot
 read(nfin,*) ATM_tot
-read(nfin,*) CC_act0
-read(nfin,*) CC_threshold_factor
-
+CC_threshold_factor = 0.9
 CC_threshold = CC_threshold_factor*CC_tot
 
 use_suppression = (ksup > 0)
@@ -225,15 +263,22 @@ real(8) :: dose
 integer :: ityp, kcell, kpar = 0
 integer :: phase
 real(8) :: DSB0(NP,2)
-real(8) :: totDSB0, T_S, T_G2, f_S, NG1, pHRs, pHRc, pHR
+real(8) :: totDSB0, T_S, T_G2, f_S, NG1, pHR
 real(8) :: Pbase, Pdie, R
 real(8) :: DSB_Gy, L
-real(8) :: th, Npre, Npost, fstart 
+real(8) :: th, Npre, Npost 
 type(cycle_parameters_type),pointer :: ccp
 logical :: use_Poisson_DSB = .true.
 
 if (use_Poisson_DSB .AND. use_no_random) use_Poisson_DSB = .false.
 cp%irradiated = .true.
+if (dose == 0) then
+    cp%DSB0 = 0
+    return
+endif
+if (compute_reprate3) then
+    reprate(HR) = min(reprate3_max,reprate3_max/dose)
+endif
 next_write_time = 0
 ccp => cc_parameters(1)
 phase = cp%phase
@@ -250,16 +295,14 @@ DSB0 = 0
 T_S = ccp%T_S*cp%fg(2)
 T_G2 = ccp%T_G2*cp%fg(3)
 th = 0
-fstart = 0
-if (constant_S_pHR) fstart = 0.8
 If (phase == G1_phase) Then
     f_S = 0
 ElseIf (phase == S_phase) Then
     f_S = cp%progress
-    th = max(0.0d0,(cp%progress - fstart)*T_S/3600)     ! time in hours
+    th = max(0.0d0,(cp%progress - f_S_decay)*T_S/3600)     ! time in hours
 ElseIf (phase >= G2_phase) Then
     f_S = 1
-    th = ((1.0 - fstart)*T_S + cp%progress*T_G2)/3600
+    th = ((1.0 - f_S_decay)*T_S + cp%progress*T_G2)/3600
 End If
 totDSB0 = (1 + f_S) * NG1
 DSB0(TMEJ,:) = 0
@@ -269,21 +312,21 @@ Else
     Npre = NG1 * (1 - f_S)
 End If
 Npost = totDSB0 - Npre
-If (f_S > 0) Then
-    pHRs = fsup*pHRs_max * ((1 - rmin) * fdecay(th) + rmin)
-    pHRc = fsup*pHRc_max * ((1 - rmin) * fdecay(th) + rmin)
+if (f_S > 0) then
+    pHR = fsup*pHR_max * ((1 - rmin) * fdecay(th) + rmin)
 else
-    pHRs = 0
-    pHRc = 0
-End If
-pHR = (1 - pComplex)*pHRs + pComplex*pHRc
-    DSB0(NHEJfast,1) = (1-pComplex)*Npre
-    DSB0(NHEJfast,2) = (1-pComplex)*(1-pHRs)*Npost     ! fast
-    DSB0(NHEJslow,1) = pComplex*Npre
-    DSB0(NHEJslow,2) = pComplex*(1-pHRc)*Npost     ! slow
-    DSB0(HR,1) = 0
-    DSB0(HR,2) = pHR*Npost
-
+    pHR = 0
+endif
+DSB0(NHEJfast,1) = (1-pComplex)*Npre
+DSB0(NHEJfast,2) = (1-pComplex)*(1-pHR)*Npost     ! fast
+DSB0(NHEJslow,1) = pComplex*Npre
+DSB0(NHEJslow,2) = pComplex*(1-pHR)*Npost     ! slow
+DSB0(HR,1) = 0
+DSB0(HR,2) = pHR*Npost
+if (kcell_now == 9) then
+    write(nflog,'(a,i6,3f8.2)') 'cellIrradiation: kcell,f_S,NG1,totDSB0: ',kcell_now,f_S,NG1,totDSB0
+    write(nflog,'(a,5f8.3)') 'Npre,Npost,pHR,fsup,pComplex: ',Npre,Npost,pHR,fsup,pComplex
+endif
 cp%pATM = 0
 cp%pATR = 0
 if (phase == G1_phase) then
@@ -308,6 +351,7 @@ cp%DSB = DSB0
 cp%DSB0 = DSB0
 cp%totDSB0 = totDSB0
 cp%Nmis = 0
+if (kcell_now == 9) write(nflog,'(a,i4,6f8.2)') 'updateRepair: kcell, DSB(:,2): ',kcell_now,cp%DSB(:,2)
 
 totPmit = 0
 totPaber = 0
@@ -326,7 +370,7 @@ real(8) :: th, f
 if (use_sigmoid) then
     f = fsigmoid(th)
 else
-    f = exp(-kdecay*th)
+    f = exp(-kfdecay*th)
 endif
 end function
 
@@ -337,7 +381,7 @@ end function
 function fsigmoid(th) result(f)
 real(8) :: th, f
 
-f = 1.0/(1.0 + exp(ksig*(th - csig)))
+f = 1.0/(1.0 + exp(kdecay*(th - cdecay)))
 end function
 
 
@@ -403,7 +447,7 @@ elseif (iph == 2) then
 endif
 if (iph == G1_phase) then
     if (cp%birthtime > t_irradiation) then      ! post-mitosis
-        if (use_SF) then
+        if (use_SF .and. .not. allow_second_mitosis) then
             write(*,*) 'get_slowdown_factors: should not get here, stopping'
             write(nflog,'(a,2i6,2f8.3,i6)') 'in get_slowdown_factors: kcell,iph,birthtime,t_irrad: ',kcell_now,iph,cp%birthtime/3600,t_irradiation/3600   !,cp%rad_state
             close(nflog)
@@ -450,7 +494,7 @@ end function
 ! No DSB repair
 !------------------------------------------------------------------------
 subroutine test_Jaiswal
-real(8) :: t, dth, tsim, dose, T_G2h, R, kfactor, DSB0(NP,2), kmccp_temp, Kcc2a_temp
+real(8) :: t, dth, tsim, dose, T_G2h, R, kfactor, DSB0(NP,2), kmccp_temp, Kcc_temp
 integer :: it, Nt, i, kpar = 0
 type(cell_type), pointer :: cp
 
@@ -465,13 +509,13 @@ cp%progress = 0.9
 cp%t_start_G2 = 0
 do i = 1,8
     kmccp_temp = 4.0 + (i-1)*0.5
-    Kcc2a_temp = get_Kcc2a(kmccp_temp,CC_tot,CC_threshold_factor,T_G2h)    
-    write(*,'(a,2f8.3)') 'kmccp, kcc2a: ',kmccp_temp,kcc2a_temp
+    Kcc_temp = get_Kcc(kmccp_temp,CC_tot,CC_threshold_factor,T_G2h)    
+    write(*,'(a,2f8.3)') 'kmccp, kcc: ',kmccp_temp,kcc_temp
 enddo
-cp%Kcc2a = get_Kcc2a(kmccp,CC_tot,CC_threshold_factor,T_G2h)  
-write(*,*) 'Kcc2a: ',cp%Kcc2a
-cp%kt2cc = kt2cc    ! use mean values
-cp%ke2cc = ke2cc
+cp%Kcc = get_Kcc(kmccp,CC_tot,CC_threshold_factor,T_G2h)  
+write(*,*) 'Kcc: ',cp%Kcc
+cp%kccmd = kccmd    ! use mean values
+cp%kccrd = kccrd
 cp%CC_act = 8.05    ! initialised to G2(0.9)
 cp%ATM_act = 0
 cp%ATR_act = 0
@@ -496,9 +540,151 @@ stop
 end subroutine
 
 !------------------------------------------------------------------------
-! Damage D is assumed to be fixed for the duration of the time step.
-!------------------------------------------------------------------------
 subroutine Jaiswal_update(cp, dth)
+type(cell_type), pointer :: cp
+real(8) :: dth
+real(8) :: dt = 0.001
+real(8) :: D_ATR, D_ATM, CC_act, ATR_act, ATM_act, CC_inact, ATR_inact, ATM_inact, tIR, ATM_fac
+real(8) :: dCC_act_dt, dATR_act_dt, dATM_act_dt, t, t_G2, Kkcc, DSB(NP), CC_act0, d(3),datr(2)
+real(8) :: dATM_plus, dATM_minus, D_NHEJ, D_HR
+integer :: iph, it, Nt
+type(cycle_parameters_type),pointer :: ccp
+logical :: use_ATR  ! ATR is used in G2, and computed in S if ATR_in_S >= 1
+logical :: dbug
+logical :: split_kmp
+logical :: first = .true.
+
+real(8) :: v(3), dv(3), abserr, relerr, tstart, tend
+integer :: nvars, k, flag
+logical :: use_RK = .false.
+integer :: NRK = 20
+
+!tIR = istep*DELTA_T/3600.
+tIR = (tnow - t_irradiation)/3600
+iph = cp%phase
+if (iph > G2_phase) then
+    return
+endif
+D_ATR = 0
+use_ATR = (iph == 3) .or. ((iph == 2) .and. (ATR_in_S >= 1))
+Nt = int(dth/dt + 0.5)
+split_kmp = (kmp2 > 0)
+do it = 1,NP
+    DSB(it) = sum(cp%DSB(it,:))     ! add pre and post!
+enddo
+ATR_act = cp%ATR_act
+CC_act = cp%CC_act
+if (iph == G1_phase) then
+    if (split_kmp) then
+        D_NHEJ = DSB(NHEJslow)
+        D_HR = 0
+    else
+        D_ATM = DSB(NHEJslow)
+    endif 
+    ATM_act = cp%ATM_act
+elseif (iph == S_phase) then
+    if (split_kmp) then
+        D_NHEJ = DSB(NHEJslow)
+        D_HR = DSB(HR)
+    else
+        D_ATM = (DSB(HR) + DSB(NHEJslow))
+    endif 
+    ATM_act = cp%ATM_act
+    if (use_ATR) then
+        D_ATR = DSB(HR)
+        ATR_act = cp%ATR_act
+    endif
+elseif (iph == G2_phase) then
+    D_ATR = DSB(HR)
+    if (split_kmp) then
+        D_NHEJ = DSB(NHEJslow)
+        D_HR = DSB(HR)
+        D_ATM = (DSB(HR) + DSB(NHEJslow))
+        ATM_fac = G2_D_ATM_max/D_ATM
+        if (ATM_fac < 1.0) then
+            D_NHEJ = ATM_fac*DSB(NHEJslow)
+            D_HR = ATM_fac*DSB(HR)
+        endif
+    else
+        D_ATM = (DSB(HR) + DSB(NHEJslow))
+        D_ATM = min(D_ATM,G2_D_ATM_max)
+    endif 
+    CC_act = cp%CC_act
+    CC_act0 = CC_act
+    ATR_act = cp%ATR_act
+    ATM_act = cp%ATM_act
+    t_G2 = (tnow - cp%t_start_G2)/3600
+    if (t_G2 > 40) then     ! force ATR_act to taper to 0 after 30h in G2
+        ATR_act = 0
+    elseif (t_G2 > 30) then
+        ATR_act = ATR_act*(40 - t_G2)/(40 - 30) 
+    endif
+else
+    return
+endif
+if (use_cell_kcc_dependence) then
+    Kkcc = cp%Kcc
+else
+    Kkcc = Kcc
+endif
+dCC_act_dt = 0
+dATR_act_dt = 0
+dATM_act_dt = 0
+do it = 1,Nt  
+    ATM_inact = ATM_tot - ATM_act
+    ATR_inact = ATR_tot - ATR_act
+    if (iph == G2_phase) then
+        CC_inact = CC_tot - CC_act
+        ATR_inact = ATR_tot - ATR_act
+        dCC_act_dt = (Kkcc + CC_act) * CC_inact / (Kmccp + CC_inact) - cp%Kccmd * ATM_act * CC_act / (Kmccmd + CC_act) - cp%Kccrd * ATR_act * CC_act / (Kmccrd + CC_act)
+        d(1) = (Kkcc + CC_act) * CC_inact / (Kmccp + CC_inact)      ! CC_act effect
+        d(2) = - cp%Kccmd * ATM_act * CC_act / (Kmccmd + CC_act)    ! ATM_act effect
+        d(3) = - cp%Kccrd * ATR_act * CC_act / (Kmccrd + CC_act)    ! ATR_act effect
+        dATR_act_dt = Krp * D_ATR * ATR_inact / (Kmrp + ATR_inact) - Krd * ATR_act * CC_act / (Kmrd + CC_act)
+        datr(1) = Krp * D_ATR * ATR_inact / (Kmrp + ATR_inact)
+        datr(2) = - Krd * ATR_act * CC_act / (Kmrd + CC_act)
+        CC_act = CC_act + dt * dCC_act_dt
+        CC_act = max(CC_act, 0.0)
+        CC_act = min(CC_act, CC_tot)
+        ATR_act = ATR_act + dt * dATR_act_dt
+        ATR_act = min(ATR_act, ATR_tot)
+    elseif (use_ATR .and. D_ATR > 0) then
+        dATR_act_dt = Krp * D_ATR * ATR_inact / (Kmrp + ATR_inact)  - Krd * ATR_act * CC_act / (Kmrd + CC_act)
+        datr(1) = Krp * D_ATR * ATR_inact / (Kmrp + ATR_inact)
+        datr(2) = - Krd * ATR_act * CC_act / (Kmrd + CC_act)
+        ATR_act = ATR_act + dt * dATR_act_dt
+    endif
+    if (tIR > t_switch_ATM) then
+        D_ATM = 0
+        dATM_plus = 0
+    else
+        if (split_kmp) then
+            dATM_plus = (Kmp1*D_NHEJ + Kmp2*D_HR) * ATM_inact / (Kmmp + ATM_inact)
+        else
+            dATM_plus = Kmp1 * D_ATM * ATM_inact / (Kmmp + ATM_inact)   ! not using kmp2, effectively kmp2 = kmp1
+        endif
+    endif
+    dATM_minus = Kmd * ATM_act / (Kmmd + ATM_act)
+    dATM_act_dt = dATM_plus - dATM_minus   
+    ATM_act = ATM_act + dt*dATM_act_dt
+    ATM_act = min(ATM_act, ATM_tot)
+    t = it*dt
+enddo
+
+cp%ATM_act = ATM_act
+if (iph == G2_phase) then
+    cp%CC_act = CC_act
+    cp%ATR_act = ATR_act
+elseif (iph == S_phase .and. use_ATR) then
+    cp%ATR_act = ATR_act
+endif
+!t = t_simulation/3600.
+end subroutine
+
+!------------------------------------------------------------------------
+! Damage is assumed to be fixed for the duration of the time step.
+!------------------------------------------------------------------------
+subroutine oldJaiswal_update(cp, dth)
 type(cell_type), pointer :: cp
 real(8) :: dth
 real(8) :: dt = 0.001
@@ -508,6 +694,9 @@ integer :: iph, it, Nt
 type(cycle_parameters_type),pointer :: ccp
 logical :: use_ATR  ! ATR is used in G2, and computed in S if ATR_in_S >= 1
 logical :: dbug
+
+real(8) :: Kcc2a, Kcc2e, Kd2e, Kd2t, Ke2cc, Kt2cc, Kti2t    ! temp
+
 
 iph = cp%phase
 if (iph > G2_phase) then
@@ -547,10 +736,10 @@ elseif (iph == G2_phase) then
 else
     return
 endif
-if (use_cell_kcc2a_dependence) then
-    Kkcc2a = cp%Kcc2a
+if (use_cell_kcc_dependence) then
+    Kkcc2a = cp%Kcc
 else
-    Kkcc2a = Kcc2a
+    Kkcc2a = Kcc
 endif
 do it = 1,Nt
     ATM_inact = ATM_tot - ATM_act
@@ -558,7 +747,7 @@ do it = 1,Nt
     if (iph == G2_phase) then
         CC_inact = CC_tot - CC_act
         ATR_inact = ATR_tot - ATR_act
-        dCC_act_dt = (Kkcc2a + CC_act) * CC_inact / (Kmccp + CC_inact) - cp%Kt2cc * ATM_act * CC_act / (Kmccmd + CC_act) - cp%Ke2cc * ATR_act * CC_act / (Kmccrd + CC_act)
+        dCC_act_dt = (Kkcc2a + CC_act) * CC_inact / (Kmccp + CC_inact) - cp%Kccmd * ATM_act * CC_act / (Kmccmd + CC_act) - cp%Kccrd * ATR_act * CC_act / (Kmccrd + CC_act)
         dATR_act_dt = Kd2e * D_ATR * ATR_inact / (Kmrp + ATR_inact) - Kcc2e * ATR_act * CC_act / (Kmrd + CC_act)
         
         CC_act = CC_act + dt * dCC_act_dt
@@ -672,7 +861,10 @@ logical :: dbug =  .false.
 logical :: do_G1_Jaiswal
 logical :: use_constant_V = .false.
 
-if (cp%state == DIVIDED) return
+dbug = (kcell_now == -9 .and. istep < 5)
+
+if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (a): kcell, DSB(:,2): ',kcell_now,cp%DSB(:,2)
+if (cp%state == EVALUATED) return
 dth = dt/3600   ! hours
 phase = cp%phase
 DSB = cp%DSB
@@ -687,6 +879,7 @@ if (Preass > 0 .and. phase >= S_phase) then
     enddo
 endif
 DSB0 = DSB     ! initial DSBs for this time step
+if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (b): kcell, DSB(:,2): ',kcell_now,DSB(:,2)
 
 totDSB0 = sum(DSB0)
 do_G1_Jaiswal = .true.      ! Do Jaiswal for G1 whether pre- or post-mitosis.  Use special katm parameters for G1 post-mitosis
@@ -695,6 +888,7 @@ if (((phase == G1_phase).and.do_G1_Jaiswal).or.(phase >= S_phase)) then
         call Jaiswal_update(cp,dth)
     endif
 endif
+if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (c): kcell, DSB(:,2): ',kcell_now,DSB(:,2)
 
 DSB = 0
 do k = 1,3
@@ -703,6 +897,7 @@ do k = 1,3
         if (DSB(k,jpp) < DSB_min) DSB(k,jpp) = 0
     enddo
 enddo
+if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (c1): kcell, DSB(:,2): ',kcell_now,DSB(:,2)
 
 if (phase == G1_phase) then
     f_S = 0.0
@@ -718,7 +913,7 @@ if (use_constant_V) then
     eta_NHEJ = etafun(1.d0,sigma)
 else
     if (use_Arnould) then
-        eta_NHEJ = eta_Arnould(phase, f_S, tIR, R_Arnould, sigma_NHEJ, Kcoh)
+        eta_NHEJ = eta_Arnould(phase, f_S, tIR, sigma_NHEJ, Kcoh)
     else
         eta_NHEJ = eta_lookup(phase, NHEJfast, f_S, tIR) 
     endif
@@ -729,6 +924,7 @@ totDSB0 = sum(DSB0(NHEJfast,:)) + sum(DSB0(NHEJslow,:))
 totDSB = sum(DSB(NHEJfast,:)) + sum(DSB(NHEJslow,:))
 Pmis = misrepairRate(totDSB0, totDSB, eta_NHEJ)
 dmis = Pmis*(totDSB0 - totDSB)
+if (dbug) write(nflog,'(a,7e12.4)') 'f_S,tIR,eta_NHEJ,Pmis,dmis: ',f_S,tIR,eta_NHEJ,Pmis,dmis,DSB(HR,2)
 if (isnan(dmis)) then
     write(nflog,*) 'dmis is NaN'
     write(nflog,'(a,2f8.2,e12.3)') 'totDSB0, totDSB, eta_NHEJ: ',totDSB0, totDSB, eta_NHEJ
@@ -745,6 +941,7 @@ if (sum(DSB0(TMEJ,:)) > 0) then ! not used currently
     Nmis(1) = Nmis(1) + dmis*(1 - f_S)
     Nmis(2) = Nmis(2) + dmis*f_S
 endif
+if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (d): kcell, DSB(:,2): ',kcell_now,DSB(:,2)
 cp%DSB = DSB
 cp%Nmis = cp%Nmis + Nmis
 
