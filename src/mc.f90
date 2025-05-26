@@ -31,9 +31,6 @@ real(8) :: KATM1G1D, KATM2G1D   ! KATM parameters for post-mitosis G1 CP slowdow
 real(8) :: KATM1S, KATM2S       ! KATM parameters for S CP slowdown
 real(8) :: KATR1S, KATR2S       ! KATR parameters for S ATR_act activation (when ATR_in_S = 2)
 
-! DNA-PK inhibition parameter
-real(8) :: Chalf    ! inhibitor concentration that halves repair rate 
-
 ! Jaiswal formulation (26/09/22)
 !real(8) :: Kcc2a, Kcc2e, Kd2e, Kd2t, Ke2cc, Kt2cc, Kti2t
 real(8) :: Kcc, Krd, Krp, Kmp1, Kmp2, Kccrd, Kccmd, Kmd
@@ -134,7 +131,10 @@ nsup = 1
 
 read(nfin,*) ksup
 G1_tdelay = 0
-read(nfin,*) Chalf
+read(nfin,*) Chalf  ! < 0 ==> do not change Krp
+suppress_ATR = (Chalf > 0)
+if (Chalf < 0) Chalf = -Chalf
+fDNAPKmin = 0.0     ! temporarily fixed
 Preass = 0
 read(nfin,*) dsigma_dt
 read(nfin,*) sigma_NHEJ
@@ -143,21 +143,6 @@ read(nfin,*) reprate3_max
 read(nfin,*) Kclus
 read(nfin,*) G2_D_ATM_max       ! cap on D_ATM in G2
 read(nfin,*) t_switch_ATM       ! time after IR when ATM_act production goes to 0
-!write(*,*) 'Kclus: ',Kclus
-!read(nfin,*) Kcc2a
-!read(nfin,*) Kcc2e
-!read(nfin,*) Kd2e
-!read(nfin,*) Kd2t
-!read(nfin,*) Ke2cc
-!read(nfin,*) Kt2cc
-!read(nfin,*) Kti2t
-!read(nfin,*) Kmccp
-!read(nfin,*) Kmccmd
-!read(nfin,*) Kmccrd
-!read(nfin,*) Kmrp
-!read(nfin,*) Kmrd
-!read(nfin,*) Kmmp
-!read(nfin,*) Kmmd
 read(nfin,*) Krd
 read(nfin,*) Krp
 read(nfin,*) Kmp1
@@ -547,6 +532,7 @@ real(8) :: dt = 0.001
 real(8) :: D_ATR, D_ATM, CC_act, ATR_act, ATM_act, CC_inact, ATR_inact, ATM_inact, tIR, ATM_fac
 real(8) :: dCC_act_dt, dATR_act_dt, dATM_act_dt, t, t_G2, Kkcc, DSB(NP), CC_act0, d(3),datr(2)
 real(8) :: dATM_plus, dATM_minus, D_NHEJ, D_HR
+real(8) :: krpp
 integer :: iph, it, Nt
 type(cycle_parameters_type),pointer :: ccp
 logical :: use_ATR  ! ATR is used in G2, and computed in S if ATR_in_S >= 1
@@ -559,7 +545,11 @@ integer :: nvars, k, flag
 logical :: use_RK = .false.
 integer :: NRK = 20
 
-!tIR = istep*DELTA_T/3600.
+if (suppress_ATR) then
+    Krpp = fDNAPK*Krp
+else
+    Krpp = Krp
+endif
 tIR = (tnow - t_irradiation)/3600
 iph = cp%phase
 if (iph > G2_phase) then
@@ -640,8 +630,8 @@ do it = 1,Nt
         d(1) = (Kkcc + CC_act) * CC_inact / (Kmccp + CC_inact)      ! CC_act effect
         d(2) = - cp%Kccmd * ATM_act * CC_act / (Kmccmd + CC_act)    ! ATM_act effect
         d(3) = - cp%Kccrd * ATR_act * CC_act / (Kmccrd + CC_act)    ! ATR_act effect
-        dATR_act_dt = Krp * D_ATR * ATR_inact / (Kmrp + ATR_inact) - Krd * ATR_act * CC_act / (Kmrd + CC_act)
-        datr(1) = Krp * D_ATR * ATR_inact / (Kmrp + ATR_inact)
+        dATR_act_dt = Krpp * D_ATR * ATR_inact / (Kmrp + ATR_inact) - Krd * ATR_act * CC_act / (Kmrd + CC_act)
+        datr(1) = Krpp * D_ATR * ATR_inact / (Kmrp + ATR_inact)
         datr(2) = - Krd * ATR_act * CC_act / (Kmrd + CC_act)
         CC_act = CC_act + dt * dCC_act_dt
         CC_act = max(CC_act, 0.0)
@@ -649,8 +639,8 @@ do it = 1,Nt
         ATR_act = ATR_act + dt * dATR_act_dt
         ATR_act = min(ATR_act, ATR_tot)
     elseif (use_ATR .and. D_ATR > 0) then
-        dATR_act_dt = Krp * D_ATR * ATR_inact / (Kmrp + ATR_inact)  - Krd * ATR_act * CC_act / (Kmrd + CC_act)
-        datr(1) = Krp * D_ATR * ATR_inact / (Kmrp + ATR_inact)
+        dATR_act_dt = Krpp * D_ATR * ATR_inact / (Kmrp + ATR_inact)  - Krd * ATR_act * CC_act / (Kmrd + CC_act)
+        datr(1) = Krpp * D_ATR * ATR_inact / (Kmrp + ATR_inact)
         datr(2) = - Krd * ATR_act * CC_act / (Kmrd + CC_act)
         ATR_act = ATR_act + dt * dATR_act_dt
     endif
@@ -815,6 +805,7 @@ atanDen = 2 + etamod*(2*initialBreaks*finalBreaks*etamod + initialBreaks + final
 Pmis = 1 - 2 * atan(atanNum/atanDen) / (repairedBreaks*sqrt(3.0)*etamod)
 end function
 
+#if 0
 !------------------------------------------------------------------------
 ! Moved here from updateRepair
 !------------------------------------------------------------------------
@@ -832,13 +823,14 @@ if (Chalf == 0) then
 endif
 ! Since there is no decay in vivo, can set Cdrug = initial conc, unless washout time has been reached.
 if (use_drug_halflife) then
-    Cdrug = drug_conc*exp(-Khalflife*(t_simulation - drug_time)/3600)
+    Cdrug = drug_conc0*exp(-Khalflife*(t_simulation - drug_time)/3600)
 else
-    Cdrug = drug_conc
+    Cdrug = drug_conc0
 endif
 
 repRateFactor(1:2) = exp(-0.693*Cdrug/Chalf)
 end subroutine
+#endif
 
 !------------------------------------------------------------------------
 ! To use parameters from mcradio, need to convert time from secs to hours
@@ -868,7 +860,9 @@ if (cp%state == EVALUATED) return
 dth = dt/3600   ! hours
 phase = cp%phase
 DSB = cp%DSB
-call getRepRateFactor(cp)
+!call getRepRateFactor(cp)
+reprateFactor(1:2) = fDNAPK
+reprateFactor(3) = 1
 ! Preass = prob of reassignment per hour
 if (Preass > 0 .and. phase >= S_phase) then
     do jpp = 1,2

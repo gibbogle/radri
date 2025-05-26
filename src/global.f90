@@ -157,7 +157,11 @@ real(8), parameter :: kmit = 0.023  ! Baide et al., dose = 1 in M --> Psurvive =
 
 ! Drug half-life simulation
 logical :: use_drug_halflife
-real(REAL_KIND) :: Khalflife, drug_time, drug_conc
+real(REAL_KIND) :: Khalflife, drug_time, drug_conc0
+
+! DNA-PK inhibition parameters
+real(8) :: fDNAPK, Chalf, fDNAPKmin
+logical :: suppress_ATR
 
 logical :: test_run = .false.	! to check Psurvive etc
 LOGICAL :: use_no_random = .false.	! to turn off variation in cycle time, DSB_Gy
@@ -528,6 +532,28 @@ do
 	if (p < L) exit
 enddo
 res = k-1
+end function
+
+!------------------------------------------------------------------------
+! See docs\models\DNA-PK\DNA-PK.xlsx
+! This is DNAPKact(C) = H(C)
+! Returns a fraction between 0 and 1.
+!------------------------------------------------------------------------
+function logistic(C) result(y)
+real(REAL_KIND) :: C, y
+real(REAL_KIND) :: bottom, top, EC50, hillslope, percent
+
+bottom = 0
+top = 100
+hillslope = -0.6919
+EC50 = Chalf
+if (C > 0) then
+    percent = bottom + (top-bottom)/(1 + 10**((log10(EC50) - log10(C))*hillslope))
+else
+    percent = 100
+endif
+y = percent/100
+y = (1 - fDNAPKmin)*y + fDNAPKmin
 end function
 
 

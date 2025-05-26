@@ -55,15 +55,13 @@
 		<Filter Name="Resource Files" Filter="rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe"/>
 		<Filter Name="Source Files" Filter="f90;for;f;fpp;ftn;def;odl;idl">
 			<File RelativePath="..\src\cellstate.f90"/>
-			<File RelativePath="..\src\cycle.f90">
-			</File>
-			<File RelativePath="..\src\eta.f90">
-			</File>
+			<File RelativePath="..\src\cycle.f90"/>
+			<File RelativePath="..\src\eta.f90"/>
 			<File RelativePath="..\src\global.f90"/>
-			<File RelativePath="..\src\kcc2a_km10.f90"/>
-			<File RelativePath="..\src\mc.f90"/>
-			<File RelativePath="..\src\par_zig_mod.f90">
+			<File RelativePath="..\src\kcc_kmccp.f90">
 			</File>
+			<File RelativePath="..\src\mc.f90"/>
+			<File RelativePath="..\src\par_zig_mod.f90"/>
 			<File RelativePath="..\src\radri.f90"/>
 			<File RelativePath="..\src\real_kind.f90"/>
 		</Filter>

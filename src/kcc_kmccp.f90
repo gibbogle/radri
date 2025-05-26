@@ -12,8 +12,9 @@ subroutine newton(x0,t0,CC_tot,kmccp,Tph)
 real(8) :: x0, t0, CC_tot, kmccp, Tph
 real(8) :: f0, f1, dfdx, dx, x1, x,t
 integer :: n
+integer, parameter :: Nits = 30
 
-dx = 0.01
+dx = 0.02
 n = 0
 x = x0
 t = t0
@@ -22,13 +23,17 @@ do
     t = tmitosis(CC_tot,x,kmccp)
     f0 = t - Tph
     dfdx = (tmitosis(CC_tot,x+dx,kmccp) - t)/dx
-    if (dfdx == 0) exit
+    if (dfdx == 0) then
+        write(*,*) 'dfdx = 0'
+        stop
+    endif
     x1 = x - f0/dfdx
     x1 = max(x1,0.01)   ! prevent x going < 0
     if (abs(x-x1)/x < 0.002) exit
     x = x1
     t = tmitosis(CC_tot,x,kmccp)
-    if (n > 20) then
+    if (n > Nits) then
+        if (abs(Tph - t) < 0.005) exit
         write(*,*) 'newton, n > 20'
         write(*,'(a,3f8.3)') 'Initial x0, t0, Tph: ',x0,t0,Tph
         write(*,'(a,2f8.3)') 'Final x, t: ',x,t

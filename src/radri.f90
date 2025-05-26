@@ -242,8 +242,8 @@ if (ndrug > 0) then
     read(nf,'(a)') drugname
     read(nf,*) halflife
     write(*,*) 'halflife: ',halflife
-    read(nf,*) drug_conc
-    write(*,*) 'drug_conc: ',drug_conc
+    read(nf,*) drug_conc0
+    write(*,*) 'drug_conc0: ',drug_conc0
     read(nf,*) washout_time_h
     write(*,*) 'washout_time_h: ',washout_time_h
     if (halflife == 0) then  ! 0 flags no decay of the drug
@@ -255,7 +255,7 @@ if (ndrug > 0) then
     if (washout_time_h < 0) then     ! this signals a CDTD expt for which CA_time = washout time, i.e. Cho1 only.  Otherwise CA_time takes the input parameter value.
         washout_time_h = -washout_time_h
         CA_time_h = washout_time_h
-    elseif (drug_conc == 0) then
+    elseif (drug_conc0 == 0) then
         washout_time_h = 0           ! this signals that there is no washout
     endif
 endif
@@ -445,6 +445,7 @@ real(REAL_KIND) :: total
 real(REAL_KIND) :: fATM, fATR, fCP, ATM_DSB, DNA_rate
 real(REAL_KIND) :: pATM_sum, pATR_sum, DSB_sum
 real(REAL_KIND) :: SFtot, Pp, Pd, newSFtot, total_mitosis_time
+real(REAL_KIND) :: Cdrug
 integer :: Ntot, Ndying, Ncont(5),Ngen1
 logical :: PEST_OK
 logical :: ok = .true.
@@ -456,6 +457,15 @@ real(8) :: prog1, prog2
 t_simulation = istep*DELTA_T	! seconds
 dbug = (istep < 0)
 nthour = 3600/DELTA_T
+
+if (drug_conc0 == 0) then
+    fDNAPK = 1
+else
+    if (use_drug_halflife) then
+        Cdrug = drug_conc0*exp(-Khalflife*(t_simulation - drug_time)/3600)
+    endif
+    fDNAPK = logistic(Cdrug)
+endif
 
 if (ngaps > 200) then
 	call squeezer
@@ -482,13 +492,13 @@ if (.not.is_radiation) then
     IR_time_h = 0
 endif
 
-if (washout_time_h > 0 .and. drug_conc > 0) then     ! check for washout time
+if (washout_time_h > 0 .and. drug_conc0 > 0) then     ! check for washout time
     if (t_simulation >= washout_time_h*3600) then
         write(nflog,'(a,i6,f8.1)') 'Drug washout: istep,time: ',istep,t_simulation/3600
         write(*,'(a,f8.1)') 'Drug washout: time: ',t_simulation/3600
         write(nflog,'(a,f8.3)') 'drug exposure time: ',(t_simulation - t_irradiation)/3600
         write(nflog,*) 'npar_uni, npar_rnor = ',npar_uni,npar_rnor
-        drug_conc = 0
+        drug_conc0 = 0
     endif
 endif
 res = 0
