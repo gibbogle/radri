@@ -18,7 +18,7 @@ real(8) :: Kcoh                 ! cohesin effect
 real(8) :: pHR_max, f_S_decay
 real(8) :: Preass               ! rate of reassignment to pathway 4, TMEJ (prob of reass/hour)
 logical :: use_sigmoid = .true.
-real(8) :: rmin, kfdecay = 0.1, kdecay, cdecay    ! decay function parameters
+real(8) :: kfdecay = 0.1, kdecay, cdecay    ! decay function parameters
 real(8) :: sigma_NHEJ = 0.04187
 real(8) :: sigma_TMEJ = 0.08
 real(8) :: repRate(NP)          ! repair rate parameters
@@ -39,12 +39,9 @@ real(8) :: kmmp, kmmd               ! ATM production, decay
 real(8) :: kmrp, kmrd               ! ATR production, decay
 real(8) :: kmccp, kmccrd, kmccmd    ! CC production, ATR-driven decay, ATM-driven decay
 real(8) :: CC_tot, ATR_tot, ATM_tot, CC_threshold, CC_threshold_factor
-real(8) :: G1_tdelay                ! delay before ATM_act updated (hours)
 logical :: use_Jaiswal = .true.
 logical :: vary_km10 = .true.
 real(8) :: jaiswal_std = 0.6
-real(8) :: G2_D_ATM_max
-real(8) :: t_switch_ATM
 
 real(8) :: repRateFactor(NP)
 
@@ -87,10 +84,7 @@ integer :: expt_ID, iph, j
 
 write(*,*) 'ReadMcParameters:'
 read(nfin,*) expt_ID
-write(*,*) 'expt_ID: ',expt_ID
-!read(nfin,*) CA_time_h
-CA_time_h = 18  ! default time, overridden by CDTD input data
-!read(nfin,*) baseRate
+write(nflog,*) 'expt_ID: ',expt_ID
 baserate = 0
 read(nfin,*) mitRate(1)
 read(nfin,*) mitRate(2)
@@ -102,47 +96,29 @@ read(nfin,*) KATM2G1
 read(nfin,*) KATM2S
 read(nfin,*) KATM1G1D
 read(nfin,*) KATM2G1D
-write(*,*) 'KATM2G1D: ',KATM2G1D
-
-!read(nfin,*) KATR1S
-!read(nfin,*) KATR2S
-
-!read(nfin,*) repRate(NHEJfast)
-!read(nfin,*) repRate(NHEJslow)
-!read(nfin,*) repRate(HR)
-!read(nfin,*) repRate(TMEJ)
-!read(nfin,*) pComplex
-!read(nfin,*) Kcoh
-!read(nfin,*) pHRs_max
 
 repRate(NHEJfast) = 2.081
 repRate(NHEJslow) = 0.2604
 repRate(TMEJ) = 0.025
 Pcomplex = 0.43
+Preass = 0
 Kcoh = 1.0
 read(nfin,*) pHR_max
-write(*,*) 'pHR_max: ',pHR_max
 read(nfin,*) f_S_decay
-!read(nfin,*) rmin
-rmin = 0
 read(nfin,*) kdecay
 read(nfin,*) cdecay
 nsup = 1
-
 read(nfin,*) ksup
-G1_tdelay = 0
-read(nfin,*) Chalf  ! < 0 ==> do not change Krp
-suppress_ATR = (Chalf > 0)
-if (Chalf < 0) Chalf = -Chalf
-fDNAPKmin = 0.0     ! temporarily fixed
-Preass = 0
+read(nfin,*) Chalf  ! < 0 ==> do not change Krp  Need to check this ????
+suppress_ATR = (Chalf > 0) ! ????
+if (Chalf < 0) Chalf = -Chalf ! ????
 read(nfin,*) dsigma_dt
 read(nfin,*) sigma_NHEJ
 read(nfin,*) Reffmin
 read(nfin,*) reprate3_max
+read(nfin,*) Z
+read(nfin,*) fDNAPKmin
 read(nfin,*) Kclus
-read(nfin,*) G2_D_ATM_max       ! cap on D_ATM in G2
-read(nfin,*) t_switch_ATM       ! time after IR when ATM_act production goes to 0
 read(nfin,*) Krd
 read(nfin,*) Krp
 read(nfin,*) Kmp1
@@ -157,15 +133,13 @@ read(nfin,*) Kmrp
 read(nfin,*) Kmrd
 read(nfin,*) Kmmp
 read(nfin,*) Kmmd
-write(*,*) 'Kmmd: ',Kmmd
 CC_tot = 10
-read(nfin,*) ATR_tot
-read(nfin,*) ATM_tot
+ATR_tot = 10
+ATM_tot = 10
 CC_threshold_factor = 0.9
 CC_threshold = CC_threshold_factor*CC_tot
 
 use_suppression = (ksup > 0)
-
 use_SF = .false.
 nphase_hours = 0
 next_phase_hour = 0
@@ -226,8 +200,8 @@ else
     write(nflog,*) 'Error: ReadMcParameters: bad expt_ID: ',expt_ID
     stop
 endif
-write(*,*) 'nphase_hours: ',nphase_hours
 if (nphase_hours > 0) then
+    write(*,*) 'nphase_hours: ',nphase_hours
     write(*,*) 'phase_hour:'
     write(*,'(10f6.2)') phase_hour(1:nphase_hours)
 endif
@@ -298,17 +272,17 @@ Else
 End If
 Npost = totDSB0 - Npre
 if (f_S > 0) then
-    pHR = fsup*pHR_max * ((1 - rmin) * fdecay(th) + rmin)
+    pHR = fsup*pHR_max  * fdecay(th)
 else
     pHR = 0
 endif
 DSB0(NHEJfast,1) = (1-pComplex)*Npre
-DSB0(NHEJfast,2) = (1-pComplex)*(1-pHR)*Npost     ! fast
+DSB0(NHEJfast,2) = (1-pComplex)*(1-pHR)*Npost
 DSB0(NHEJslow,1) = pComplex*Npre
-DSB0(NHEJslow,2) = pComplex*(1-pHR)*Npost     ! slow
+DSB0(NHEJslow,2) = pComplex*(1-pHR)*Npost
 DSB0(HR,1) = 0
 DSB0(HR,2) = pHR*Npost
-if (kcell_now == 9) then
+if (kcell_now == 1) then
     write(nflog,'(a,i6,3f8.2)') 'cellIrradiation: kcell,f_S,NG1,totDSB0: ',kcell_now,f_S,NG1,totDSB0
     write(nflog,'(a,5f8.3)') 'Npre,Npost,pHR,fsup,pComplex: ',Npre,Npost,pHR,fsup,pComplex
 endif
@@ -326,8 +300,6 @@ if (phase == G1_phase) then
         Ncells = Ncells - 1
         ityp = cp%celltype
         Ncells_type(ityp) = Ncells_type(ityp) - 1
-        Nviable(ityp) = Ncells_type(ityp)
-        Ndead(ityp) = Ndead(ityp) + 1
         write(nflog,*) 'apoptotic death: ',kcell_now, phase
     endif
 endif
@@ -336,12 +308,10 @@ cp%DSB = DSB0
 cp%DSB0 = DSB0
 cp%totDSB0 = totDSB0
 cp%Nmis = 0
-if (kcell_now == 9) write(nflog,'(a,i4,6f8.2)') 'updateRepair: kcell, DSB(:,2): ',kcell_now,cp%DSB(:,2)
 
 totPmit = 0
 totPaber = 0
 tottotDSB = 0
-
 totNDSB = 0
 totNmisjoins = 0
 
@@ -525,6 +495,7 @@ stop
 end subroutine
 
 !------------------------------------------------------------------------
+!------------------------------------------------------------------------
 subroutine Jaiswal_update(cp, dth)
 type(cell_type), pointer :: cp
 real(8) :: dth
@@ -533,6 +504,7 @@ real(8) :: D_ATR, D_ATM, CC_act, ATR_act, ATM_act, CC_inact, ATR_inact, ATM_inac
 real(8) :: dCC_act_dt, dATR_act_dt, dATM_act_dt, t, t_G2, Kkcc, DSB(NP), CC_act0, d(3),datr(2)
 real(8) :: dATM_plus, dATM_minus, D_NHEJ, D_HR
 real(8) :: krpp
+real(8) :: Tlag = 2 !h
 integer :: iph, it, Nt
 type(cycle_parameters_type),pointer :: ccp
 logical :: use_ATR  ! ATR is used in G2, and computed in S if ATR_in_S >= 1
@@ -590,14 +562,14 @@ elseif (iph == G2_phase) then
         D_NHEJ = DSB(NHEJslow)
         D_HR = DSB(HR)
         D_ATM = (DSB(HR) + DSB(NHEJslow))
-        ATM_fac = G2_D_ATM_max/D_ATM
-        if (ATM_fac < 1.0) then
-            D_NHEJ = ATM_fac*DSB(NHEJslow)
-            D_HR = ATM_fac*DSB(HR)
-        endif
+        !ATM_fac = G2_D_ATM_max/D_ATM
+        !if (ATM_fac < 1.0) then
+        !    D_NHEJ = ATM_fac*DSB(NHEJslow)
+        !    D_HR = ATM_fac*DSB(HR)
+        !endif
     else
         D_ATM = (DSB(HR) + DSB(NHEJslow))
-        D_ATM = min(D_ATM,G2_D_ATM_max)
+        !D_ATM = min(D_ATM,G2_D_ATM_max)
     endif 
     CC_act = cp%CC_act
     CC_act0 = CC_act
@@ -644,23 +616,20 @@ do it = 1,Nt
         datr(2) = - Krd * ATR_act * CC_act / (Kmrd + CC_act)
         ATR_act = ATR_act + dt * dATR_act_dt
     endif
-    if (tIR > t_switch_ATM) then
-        D_ATM = 0
-        dATM_plus = 0
+    if (split_kmp) then
+        dATM_plus = (Kmp1*D_NHEJ + Kmp2*D_HR) * ATM_inact / (Kmmp + ATM_inact)
     else
-        if (split_kmp) then
-            dATM_plus = (Kmp1*D_NHEJ + Kmp2*D_HR) * ATM_inact / (Kmmp + ATM_inact)
-        else
-            dATM_plus = Kmp1 * D_ATM * ATM_inact / (Kmmp + ATM_inact)   ! not using kmp2, effectively kmp2 = kmp1
-        endif
+        dATM_plus = Kmp1 * D_ATM * ATM_inact / (Kmmp + ATM_inact)   ! not using kmp2, effectively kmp2 = kmp1
     endif
     dATM_minus = Kmd * ATM_act / (Kmmd + ATM_act)
     dATM_act_dt = dATM_plus - dATM_minus   
+    if (iph == G1_phase .and. tIR < Tlag) dATM_act_dt = 0
     ATM_act = ATM_act + dt*dATM_act_dt
+    !if (kcell_now == 9) write(nflog,'(a,i6,6f8.3)') 'it,D_NHEJ,D_HR,,ATM_inact,ATM_act,dATM_plus,dATM_minus: ',it,D_NHEJ,D_HR,ATM_inact,ATM_act,dATM_plus,dATM_minus
     ATM_act = min(ATM_act, ATM_tot)
     t = it*dt
 enddo
-
+!if (kcell_now == 9) stop
 cp%ATM_act = ATM_act
 if (iph == G2_phase) then
     cp%CC_act = CC_act
@@ -853,9 +822,9 @@ logical :: dbug =  .false.
 logical :: do_G1_Jaiswal
 logical :: use_constant_V = .false.
 
-dbug = (kcell_now == -9 .and. istep < 5)
+dbug = (kcell_now == 9)
 
-if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (a): kcell, DSB(:,2): ',kcell_now,cp%DSB(:,2)
+!if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (a): kcell, DSB(:,2): ',kcell_now,cp%DSB(:,2)
 if (cp%state == EVALUATED) return
 dth = dt/3600   ! hours
 phase = cp%phase
@@ -873,7 +842,6 @@ if (Preass > 0 .and. phase >= S_phase) then
     enddo
 endif
 DSB0 = DSB     ! initial DSBs for this time step
-if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (b): kcell, DSB(:,2): ',kcell_now,DSB(:,2)
 
 totDSB0 = sum(DSB0)
 do_G1_Jaiswal = .true.      ! Do Jaiswal for G1 whether pre- or post-mitosis.  Use special katm parameters for G1 post-mitosis
@@ -882,16 +850,13 @@ if (((phase == G1_phase).and.do_G1_Jaiswal).or.(phase >= S_phase)) then
         call Jaiswal_update(cp,dth)
     endif
 endif
-if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (c): kcell, DSB(:,2): ',kcell_now,DSB(:,2)
-
-DSB = 0
+DSB = DSB0
 do k = 1,3
     do jpp = 1,2
         call pathwayRepair(k, dth, DSB0(k,jpp), DSB(k,jpp))
         if (DSB(k,jpp) < DSB_min) DSB(k,jpp) = 0
     enddo
 enddo
-if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (c1): kcell, DSB(:,2): ',kcell_now,DSB(:,2)
 
 if (phase == G1_phase) then
     f_S = 0.0
@@ -918,7 +883,8 @@ totDSB0 = sum(DSB0(NHEJfast,:)) + sum(DSB0(NHEJslow,:))
 totDSB = sum(DSB(NHEJfast,:)) + sum(DSB(NHEJslow,:))
 Pmis = misrepairRate(totDSB0, totDSB, eta_NHEJ)
 dmis = Pmis*(totDSB0 - totDSB)
-if (dbug) write(nflog,'(a,7e12.4)') 'f_S,tIR,eta_NHEJ,Pmis,dmis: ',f_S,tIR,eta_NHEJ,Pmis,dmis,DSB(HR,2)
+!if (dbug) write(nflog,'(a,2i4,3f8.3,e12.3,f6.3)') 'DSB0,DSB,Pmis,dmis: ',istep,cp%phase,cp%progress,totDSB0,totDSB,Pmis,dmis
+!if (dbug) write(nflog,'(a,7e12.4)') 'f_S,tIR,eta_NHEJ,Pmis,dmis: ',f_S,tIR,eta_NHEJ,Pmis,dmis,DSB(HR,2)
 if (isnan(dmis)) then
     write(nflog,*) 'dmis is NaN'
     write(nflog,'(a,2f8.2,e12.3)') 'totDSB0, totDSB, eta_NHEJ: ',totDSB0, totDSB, eta_NHEJ
@@ -935,7 +901,7 @@ if (sum(DSB0(TMEJ,:)) > 0) then ! not used currently
     Nmis(1) = Nmis(1) + dmis*(1 - f_S)
     Nmis(2) = Nmis(2) + dmis*f_S
 endif
-if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (d): kcell, DSB(:,2): ',kcell_now,DSB(:,2)
+!if (dbug) write(nflog,'(a,i4,6f8.2)') 'updateRepair (d): kcell, DSB(:,2): ',kcell_now,DSB(:,2)
 cp%DSB = DSB
 cp%Nmis = cp%Nmis + Nmis
 
@@ -978,8 +944,6 @@ else    ! M_phase or dividing
         Nmitotic = Nmitotic + 1
         ityp = cp%celltype
         Ncells_type(ityp) = Ncells_type(ityp) - 1
-        Nviable(ityp) = Ncells_type(ityp)
-        Ndead(ityp) = Ndead(ityp) + 1
     else
         Paber = 1
         cp%Psurvive = exp(-kmit*sum(totDSB))
@@ -990,7 +954,7 @@ totNmis = 2*Nmis(1)+Nmis(2)
 if (cp%state /= DEAD) then
     NPsurvive = NPsurvive + 1   ! this is the count of cells for which Psurvive has been computed
     cp%mitosis_time = tnow      ! needed to determine if mitosis occurs before or after CA
-    cp%state = DIVIDED      ! this actually means that the cell reached division
+    cp%state = DIVIDED          ! this actually means that the cell reached division
 endif
 totPmit = totPmit + Pmit
 totPaber = totPaber + Paber

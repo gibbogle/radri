@@ -7,7 +7,7 @@ use global
 implicit none
 integer :: res
 real(8) :: summarydata(100)
-character*(128) :: infile, outfile, runfile
+character*(128) :: infile, outfile
 integer :: status, nlen, cnt, i, inbuflen, outbuflen
 integer :: jstep,  irun     
 character*(128) :: b, c, progname
@@ -47,28 +47,14 @@ do i = 1, cnt
         infile = c(1:nlen)
         write(*,*) 'Input file: ',infile
     endif
-    use_PEST = .false.
 end do
-if (cnt == 2) then
-    call get_command_argument (2, c, nlen, status)
-    PEST_outputfile = c(1:nlen)     ! PEST is the parameter estimation program
-    use_PEST = .true.
-elseif (cnt /= 1) then
-	write(*,*) 'Error: wrong number of arguments'
-	stop
-endif
-
-if (use_PEST) then
-    outfile = PEST_outputfile
-else
-    outfile = 'radri_main.out' 
-endif
+outfile = 'radri_main.out' 
 
 ! Synchronisation of cell IR
 use_synchronise = .false.
-use_single = .false.    ! to simulate a cell (or cells) at specified synch_phase and synch_progress
-synch_phase = S_phase
-synch_fraction = 0.5
+use_single = .false.    ! to simulate a cell (or cells) at a single start point in the cycle (specified synch_phase and synch_progress)
+synch_phase = G1_phase
+synch_fraction = 0.1
 nph = 1
 if (use_synchronise) then
     if (use_single) then
@@ -95,7 +81,9 @@ do irun = 1,nph
 	call execute(infile,inbuflen,outfile,outbuflen,res)
 	if (res /= 0) stop
 	t1 = wtime()
-	write(*,*) 'did execute: nsteps: ',nsteps
+	write(*,*) 'did execute: max nsteps = ',nsteps
+
+! Setup done, now start the simulation
 	do jstep = 1,Nsteps+1
 		call simulate_step(res)
 		if (res == 1) then
@@ -109,11 +97,10 @@ do irun = 1,nph
 			stop
 		endif
 	enddo
-    write(*,*) 'res: ',res
     if (res == 0) write(*,*) 'Exceeded nsteps, not all cells reached mitosis, increase ndays'
 	call terminate_run(res)
 	t2 = wtime()
-	write(*,*) 'time: ',t2-t1
+	write(*,'(a,f6.1)') 'run time: ',t2-t1
 enddo
 end
 

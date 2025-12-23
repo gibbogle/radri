@@ -1,0 +1,29 @@
+RaDRI program
+-------------
+
+Building
+--------
+The program is coded in fortran 90.  Any more recent compiler version will work.
+
+There are two executable parts:
+radri_main.exe is the main executable.  This is compiled from a single source file.  The main program links to the dynamic link library. 
+radri.dll contains all the program functions.  It is built from 9 source files.
+
+On a Windows PC, the program has been built using the Intel Fortran Compiler 2024.1 integrated with Microsoft Visual Studio Professional 2019
+Project files for this environment - radri_main.vfproj and radri.vfproj - are included in the distribution.
+The program has also been built on a Linux system, again using the Intel compiler.
+
+Running
+-------
+The program is executed from the command line:
+>radri_main case.inp
+
+where case.inp is the input file.  Several example input files are included in the distribution:
+D2C3.inp (radiation dose = 2 Gy, drug conc. = 3 uM)
+D6C3.inp (radiation dose = 6 Gy, drug conc. = 3 uM)
+D2C0.inp (radiation only, dose = 2 Gy)
+D6C0.inp (radiation only, dose = 6 Gy)
+
+These input files control simulations to determine average SF. These simulations have EXPT_ID = 1 (line 12 in the input file.)
+Results are written to the screen and to the log file.
+Several other kinds of simulations, corresponding to different values of EXPT_ID, can be found in the code (in ReadMcParameters()).

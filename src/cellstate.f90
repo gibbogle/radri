@@ -40,7 +40,7 @@ type(cycle_parameters_type), pointer :: ccp
 ok = .true.
 Nirradiated = Ncells
 t_irradiation = t_simulation
-write(nflog,'(a,f8.3,i6)') 'Irradiation: t, Nirradiated: ',t_irradiation/3600,Nirradiated
+write(nflog,'(a,f8.3,i8,i4)') 'Irradiation: t, Nirradiated, istep: ',t_irradiation/3600,Nirradiated,istep
 call get_phase_distribution(phase_count)
 total = sum(phase_count)
 ph_dist = 100*phase_count/total
@@ -71,7 +71,7 @@ do kcell = 1,nlist
 	else
 		fsup = 1.0
 	endif
-	if (kcell == 9) write(nflog,'(a,2i4,4f8.3,L2)') 'Irradiation: kcell,phase,nsup,ksup,dose_threshold,fsup: ',kcell,cp%phase,nsup,ksup,dose_threshold,fsup,use_suppression
+	if (kcell == 1) write(nflog,'(a,2i4,4f8.3,L2)') 'Irradiation: kcell,phase,nsup,ksup,dose_threshold,fsup: ',kcell,cp%phase,nsup,ksup,dose_threshold,fsup,use_suppression
     call cellIrradiation(cp,dose)
 enddo   
 total = 0
@@ -80,7 +80,7 @@ do kcell = 1,nlist
     total = total + cp%totDSB0
 enddo
 write(*,*) 'Irradiation: phase counts: ',counts(1:4)
-write(nflog,*) 'At irradiation, total DSB: ',total
+write(nflog,*) 'At irradiation, istep, total DSB: ',istep, total
 end subroutine
 
 #if 0
@@ -116,14 +116,11 @@ integer :: k, kcell, nlist0, ityp, ndone, kpar=0
 type(cell_type), pointer :: cp
 type(cycle_parameters_type), pointer :: ccp
 real(REAL_KIND) :: mitosis_duration, Ntot, PS, R
-!integer, parameter :: MAX_DIVIDE_LIST = 100000
-!integer :: ndivide, divide_list(MAX_DIVIDE_LIST)
 logical :: divide
 
 ok = .true.
 changed = .false.
 nlist0 = nlist
-!ndivide = 0
 
 ndone = 0
 SFdone = .false.
@@ -131,11 +128,6 @@ SFdone = .false.
 do kcell = 1,nlist0
 	kcell_now = kcell
    	cp => cell_list(kcell)
-!   if (cp%state == DIVIDED) cycle
-!	if (cp%state == DEAD) cycle
-!	if (cp%state == DYING) then
-!		cycle
-!   endif
     
     if (use_SF .and. cp%state == EVALUATED) cycle
 	ndone = ndone + 1
@@ -147,7 +139,9 @@ do kcell = 1,nlist0
 	if (cp%phase < M_phase) then
 	    call growcell(cp,dt)
 	endif
+	if (kcell == -1) write(nflog,'(a,2i4,6f6.1)') 'pre-log_timestep: istep, phase, DSB: ',istep, cp%phase, cp%DSB(1:3,1:2)
     call log_timestep(cp, ccp, dt)
+	if (kcell == -1) write(nflog,'(a,2i4,6f6.1)') 'post-log_timestep: istep, phase, DSB: ',istep, cp%phase, cp%DSB(1:3,1:2)
     if (cp%phase == M_phase) then
 		cp%mitosis = 0
 		cp%t_start_mitosis = tnow
@@ -155,47 +149,11 @@ do kcell = 1,nlist0
         cp%phase = dividing
     endif
 
-#if 0	
-    if (cp%phase == dividing) then
-		cp%mitosis = (tnow - cp%t_start_mitosis)/mitosis_duration
-        if (cp%mitosis >= 1) then
-			cp%G2_time = tnow - cp%t_start_G2
-            if (use_SF) then
-			    if (is_radiation .and. cp%Psurvive < 0) then
-			        call survivalProbability(cp)
-			    endif
-				divide = .false.	! no division when SFave is to be computed
-			else
-			    divide = .true.
-			endif
-		endif
-    endif
-    ! end cell simulation---------------------------------------------------------------------
-    
-	if (divide) then
-		ndivide = ndivide + 1
-		if (ndivide > MAX_DIVIDE_LIST) then
-		    write(nflog,*) 'Error: growcells: MAX_DIVIDE_LIST exceeded: ',MAX_DIVIDE_LIST
-		    ok = .false.
-		    return
-		endif
-		divide_list(ndivide) = kcell
-	endif
-enddo
-do k = 1,ndivide
-	changed = .true.
-	kcell = divide_list(k)
-   	cp => cell_list(kcell)
-	call divider(kcell, ok)
-	if (.not.ok) return
-enddo
-#endif
 
     if (cp%phase == dividing) then
 		cp%mitosis = (tnow - cp%t_start_mitosis)/mitosis_duration
         if (cp%mitosis >= 1) then
 			cp%G2_time = tnow - cp%t_start_G2
-! if use_SF (i.e. we are computing SF_ave) then only cells not satisfying (is_radiation .and. cp%Psurvive < 0) need to divide
 			if (allow_second_mitosis .and. (cp%phase0 == M_phase)) then		! cell mitotic at IR
 				if (cp%t_divide_last < 0) then
                     Ntot = sum(cp%DSB)
@@ -255,6 +213,7 @@ if (.not.is_radiation .and. f_CP < 1.0) then
     stop
 endif
 cp%fp = f_CP/cp%fg(cp%phase)
+
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -270,7 +229,6 @@ integer :: kpar = 0
 ok = .true.
 ityp = 1
 ccp => cc_parameters(ityp)
-ndivided = ndivided + 1
 cp1 => cell_list(kcell1)
 cp1%state = newstate
 cp1%generation = cp1%generation + 1
@@ -293,18 +251,13 @@ cp1%DSB(HR,:) = 0
 cp1%DSB(TMEJ,:) = 0
 
 ! Second cell
-if (ngaps > 0) then
-    kcell2 = gaplist(ngaps)
-    ngaps = ngaps - 1
-else
-	nlist = nlist + 1
-	if (nlist > MAX_NLIST) then
-		ok = .false.
-		write(nflog,*) 'Error: Maximum number of cells MAX_NLIST has been exceeded.  Increase and rebuild.'
-		return
-	endif
-	kcell2 = nlist
+nlist = nlist + 1
+if (nlist > MAX_NLIST) then
+	ok = .false.
+	write(nflog,*) 'Error: Maximum number of cells MAX_NLIST has been exceeded.  Increase and rebuild.'
+	return
 endif
+kcell2 = nlist
 
 ncells = ncells + 1
 ityp = cp1%celltype

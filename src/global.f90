@@ -26,15 +26,10 @@ integer, parameter :: S_phase       = 2
 integer, parameter :: G2_phase      = 3
 integer, parameter :: M_phase       = 4
 integer, parameter :: dividing      = 5
-! checkpoint phases are no longer used, instead phase progress is slowed
-integer, parameter :: G1_checkpoint = 6
-integer, parameter :: S_checkpoint  = 7
-integer, parameter :: G2_checkpoint = 8
 
-integer, parameter :: nfin=10, nfout=11, nflog=12, nfres=13, nfrun=14, nfcell=15, nftreatment=16, nfphase=17, &
-					  nfpar=18, nftcp=20, nfpest = 21
+integer, parameter :: nfcell=10, nfout=11, nflog=12, nfres=13
 
-integer, parameter :: MAX_CELLTYPES = 2
+integer, parameter :: MAX_CELLTYPES = 2		! only 1 is used
 integer, parameter :: max_nlist = 300000
 real(REAL_KIND), parameter :: PI = 4.0*atan(1.0)
 
@@ -88,7 +83,7 @@ type(cell_type), allocatable, target :: cell_list(:)
 integer :: initial_count
 
 integer :: nlist, Ncells, Ncells0, ncells_mphase, lastID, Ncelltypes
-integer :: Ncells_type(MAX_CELLTYPES), Ndying(MAX_CELLTYPES), Nviable(MAX_CELLTYPES), Ndead(MAX_CELLTYPES)
+integer :: Ncells_type(MAX_CELLTYPES), Ndying(MAX_CELLTYPES)
 
 type(cycle_parameters_type), target :: cc_parameters(MAX_CELLTYPES)
 
@@ -97,27 +92,17 @@ integer :: Mnodes
 real(REAL_KIND) :: DELTA_T, tnow   
 real(REAL_KIND) :: divide_time_median(MAX_CELLTYPES), divide_time_shape(MAX_CELLTYPES), divide_time_mean(MAX_CELLTYPES)
 real(REAL_KIND) :: t_simulation
-real(REAL_KIND) :: start_wtime
 real(REAL_KIND) :: IR_time_h, CA_time_h, washout_time_h
-
-integer, allocatable :: gaplist(:)
-integer :: ngaps, ndivided
-integer, parameter :: max_ngaps = 200000
 
 character*(2048) :: inputfile
 character*(2048) :: outputfile
 
 logical :: simulation_start, par_zig_init
 logical :: is_radiation
-logical :: use_gaplist = .true.
 logical :: dbug = .false.
 
 integer :: seed(2)
 integer :: kcell_now
-
-! PEST variables
-logical :: use_PEST = .false.
-character*(128) :: PEST_outputfile
 
 logical :: use_synchronise   ! now set in main
 integer :: synch_phase
@@ -146,7 +131,7 @@ logical, parameter :: no_S_suppression = .false.	! If true this cancels suppress
 real(REAL_KIND), parameter :: dose_threshold = 0
 integer :: ATR_in_S = 1		! 0 = no ATR signalling in S, 1 = signalling, no CP effect, 2 = signalling and CP effect
 logical, parameter :: use_Arnould = .true.
-real(REAL_KIND) :: Reffmin, Kclus	! for DSB clustering
+real(REAL_KIND) :: Z, Reffmin, Kclus	! for DSB clustering
 logical :: use_cell_kcc_dependence = .true.
 
 logical :: compute_cycle
@@ -173,8 +158,7 @@ integer :: ntrack1 = 0
 integer :: tracked2(500)
 integer :: ntrack2 = 0
 
-!DEC$ ATTRIBUTES DLLEXPORT :: nsteps, use_PEST, PEST_outputfile
-!DEC$ ATTRIBUTES DLLEXPORT :: use_synchronise, synch_phase, synch_fraction
+!DEC$ ATTRIBUTES DLLEXPORT :: nsteps, use_synchronise, synch_phase, synch_fraction
 contains
 
 !-----------------------------------------------------------------------------------------
@@ -453,45 +437,6 @@ endif
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-! Squeeze gaps out of cellist array, adjusting occupancy array.
-!-----------------------------------------------------------------------------------------
-subroutine squeezer()
-integer :: last, kcell, site(3), indx(2), i, j, idc, n, region
-
-if (ngaps == 0) return
-last = nlist
-kcell = 0
-n = 0
-do
-    kcell = kcell+1
-    if (cell_list(kcell)%state == DEAD) then    ! a gap
-        if (kcell == last) exit
-        do
-            if (last == 0) then
-                write(nflog,*) 'last = 0: kcell: ',kcell
-                stop
-            endif
-            if (cell_list(last)%state == DEAD) then
-                last = last-1
-                n = n+1
-                if (n == ngaps) exit
-            else
-                exit
-            endif
-        enddo
-        if (n == ngaps) exit
-        cell_list(kcell) = cell_list(last)
-        last = last-1
-        n = n+1
-    endif
-    if (n == ngaps) exit
-enddo
-nlist = nlist - ngaps
-ngaps = 0
-
-end subroutine
-
-!-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
 subroutine get_phase_distribution(phase_count)
 integer :: phase_count(0:4)
@@ -501,17 +446,9 @@ type(cell_type), pointer :: cp
 phase_count = 0
 do kcell = 1,nlist
     cp => cell_list(kcell)
-    if (cp%state == DEAD) then
-        ph = 0      ! 
-    elseif (cp%phase == G1_phase .or. cp%phase == G1_checkpoint) then
-        ph = 1
-    elseif (cp%phase == S_phase .or. cp%phase == S_checkpoint) then
-        ph = 2
-    elseif (cp%phase == G2_phase .or. cp%phase == G2_checkpoint) then
-        ph = 3
-    else
-        ph = 4
-    endif
+	ph = cp%phase
+    if (cp%state == DEAD) ph = 0 
+	ph = min(ph,4)	! dividing counts as M_phase
     phase_count(ph) = phase_count(ph) + 1
 enddo
 end subroutine
@@ -540,19 +477,16 @@ end function
 ! Returns a fraction between 0 and 1.
 !------------------------------------------------------------------------
 function logistic(C) result(y)
-real(REAL_KIND) :: C, y
-real(REAL_KIND) :: bottom, top, EC50, hillslope, percent
+real(8) :: C, y
+real(8) :: EC50, hill_n
 
-bottom = 0
-top = 100
-hillslope = -0.6919
+hill_n = 1.0
 EC50 = Chalf
 if (C > 0) then
-    percent = bottom + (top-bottom)/(1 + 10**((log10(EC50) - log10(C))*hillslope))
+    y = 1/(1 + (C/EC50)**hill_n)
 else
-    percent = 100
+   y = 1
 endif
-y = percent/100
 y = (1 - fDNAPKmin)*y + fDNAPKmin
 end function
 

@@ -88,7 +88,11 @@ real(8) :: Reff, sigma, fsigma
 
 Reff = (1 - f_S)*((1 - Reffmin)*exp(-Kclus*tIR) + Reffmin) + f_S*1.26
 fsigma = 1 - (1 - fsmin)*f_S
-sigma = S_NHEJ + tIR*dsigma_dt
+if (Z > 0) then
+    sigma = S_NHEJ + tIR*dsigma_dt*(1 - f_S/Z)
+else
+    sigma = S_NHEJ + tIR*dsigma_dt
+endif
 sigma = fsigma*sigma
 
 eta = etafun(Reff,sigma)

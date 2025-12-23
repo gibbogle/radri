@@ -1,0 +1,51 @@
+10000       INITIAL_COUNT             Initial cell count
+18.62       DIVIDE_TIME_MEDIAN        Median (h)
+1.1         DIVIDE_TIME_SHAPE         Shape parameter
+8           NDAYS                     Max number of days
+600         DELTA_T                   Time step (secs)
+1235        SEED1                     First RNG seed
+5679        SEED2                     Second RNG see
+0.377       f_G1_1                    G1 phase mean fraction
+0.441       f_S_1                     S phase mean fraction
+0.161       f_G2_1                    G2 phase mean fraction
+0.021       f_M_1                     M phase mean fraction
+1			EXPT_ID					  Experiment ID
+.1520       MITRATE1
+.0677       MITRATE2
+.0391       KLETHAL
+.9159       KATM1G1
+5.000       KATM1S
+.4288       KATM2G1
+250.0       KATM2S
+.2587       KATM1G1D
+2.E-5       KATM2G1D
+1.000       PHR_MAX
+.8000       F_S_DECAY
+1.290       KDECAY
+3.540       CDECAY
+.6170       KSUP
+.2315       CHALF
+.0326       DSIGMA_DT
+.0531       SIGMA_NHEJ
+1.000       REFFMIN
+1.000       REPRATE3_MAX
+2.000       Z
+.0896       FDNAPKMIN
+1.200       KCLUS
+2.909       KRD
+2.888       KRP
+1.315       KMP1
+.6854       KMP2
+1.809       KCCRD
+75.73       KCCMD
+8.813       KMD
+.0667       KMCCP
+646.6       KMCCMD
+.1416       KMCCRD
+496.6       KMRP
+.1117       KMRD
+14.88       KMMP
+5.032       KMMD
+0           NDRUG
+18			CA_TIME_H
+6           RADIATION_DOSE

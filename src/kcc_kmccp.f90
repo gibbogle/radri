@@ -70,11 +70,14 @@ end function
 function get_Kcc(kmccp, CC_tot, CC_threshold_factor, T_G2) result(kcc)
 real(8) :: kmccp, CC_tot, CC_threshold_factor, T_G2, kcc
 real(8) :: x0, t0
+real(8),parameter :: a = 0.015, b = 0.1737, c = 0.1075 
 
-CC_factor = CC_threshold_factor
-x0 = 0.5      ! initial guess
+CC_factor = abs(CC_threshold_factor)
+x0 = 0.5
+if (kmccp < 1.0) x0 = 0.1
+if (kmccp > 5.0) x0 = 2.0
 t0 = tmitosis(CC_tot,x0,kmccp)
-call newton(x0,t0,CC_tot,kmccp,1.0*T_G2)    ! find x0 = kcc2a such that tmitosis = T_G2
+call newton(x0,t0,CC_tot,kmccp,1.0*T_G2)    ! find x0 = kcc such that tmitosis = T_G2
 kcc = x0
 end function
 
