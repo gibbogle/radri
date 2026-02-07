@@ -32,6 +32,7 @@ logical :: switch
 tIR = (tnow - t_irradiation)/3600
 10 continue
 if (cp%phase == G1_phase) then
+    if (single_cell) write(nflog,'(a,5f12.4)') 'G1: progress, fp, dt, t_G1, dp: ',cp%progress,cp%fp,dt,ccp%T_G1,cp%fp*dt/ccp%T_G1
     cp%progress = cp%progress + cp%fp*dt/ccp%T_G1
     if (cp%progress >= 1) then
         cp%phase = S_phase

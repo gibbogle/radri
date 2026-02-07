@@ -155,17 +155,16 @@ do kcell = 1,nlist0
         if (cp%mitosis >= 1) then
 			cp%G2_time = tnow - cp%t_start_G2
 			if (allow_second_mitosis .and. (cp%phase0 == M_phase)) then		! cell mitotic at IR
-				if (cp%t_divide_last < 0) then
+				if (cp%t_divide_last < 0) then	! initial division (M1)
                     Ntot = sum(cp%DSB)
 					PS = exp(-kmit*Ntot)
 					R = par_uni(kpar)
-					if (R > PS) then	! the cell is fated to die
+					if (R > PS) then	! the cell is fated to die, divide and set state = DYING for both daughters
 						call divider(kcell, DYING, ok)
-					else
-!						divide (1 new cell) and set state = ALIVE for both daughters
+					else				! divide and set state = ALIVE for both daughters
 						call divider(kcell, ALIVE, ok)
 					endif
-				else	! cells at M2
+				else	! cell at M2
 					if (use_SF) then	! evaluate Psurvive
 						if (cp%state == DYING) then		 
 							cp%Psurvive = 0
@@ -213,6 +212,7 @@ if (.not.is_radiation .and. f_CP < 1.0) then
     stop
 endif
 cp%fp = f_CP/cp%fg(cp%phase)
+!if (single_cell) write(nflog,'(a,3e13.4)') 'growcell: f_CP,fg,fp',f_CP,cp%fg(cp%phase),cp%fp
 
 end subroutine
 
@@ -262,7 +262,6 @@ kcell2 = nlist
 ncells = ncells + 1
 ityp = cp1%celltype
 ccp => cc_parameters(ityp)
-ncells_type(ityp) = ncells_type(ityp) + 1
 ncells_mphase = ncells_mphase - 1
 cp2 => cell_list(kcell2)
 cp2 = cp1

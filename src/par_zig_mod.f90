@@ -35,11 +35,6 @@ MODULE Par_Zig_mod
                             q,                    de0=7.697117470131487_DP, &
                             te0=7.697117470131487_DP,                       &
                             ve=0.003949659822581572_DP
-!   INTEGER,  SAVE       ::  iz, jz, jsr=123456789, kn(0:127),              &
-!                            ke(0:255), hz
-!   REAL(DP), SAVE       ::  wn(0:127), fn(0:127), we(0:255), fe(0:255)
-!   LOGICAL,  SAVE       ::  initialized=.FALSE.
-
 	integer, save :: par_n = 0, par_step, npar_uni, npar_rnor
 	integer, allocatable, save ::  par_jsr(:), par_kn(:,:), par_ke(:,:)
 	real(DP), allocatable, save :: par_wn(:,:), par_fn(:,:), par_we(:,:), par_fe(:,:)

@@ -39,13 +39,11 @@ call PlaceCells(ok)
 if (.not.ok) return
 
 istep = 0
-Ndying = 0
 
 ncells_mphase = 0
 
 t_simulation = 0
 SFdone = .false.
-allocate(nphase(0:ndays*24,8))
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -62,7 +60,6 @@ call RngInitialisation
 ! These are deallocated here instead of in subroutine wrapup so that when a simulation run ends
 ! it will still be possible to view the cell distributions and chemokine concentration fields.
 if (allocated(cell_list)) deallocate(cell_list)
-if (allocated(nphase)) deallocate(nphase)
 if (allocated(Psurvive)) deallocate(Psurvive)
 
 nlist = 0
@@ -253,7 +250,6 @@ subroutine AddCell(kcell)
 integer :: kcell
 integer :: ityp, kpar = 0
 real(REAL_KIND) :: R, kfactor
-real(8) :: kcc2a_std = 0.7
 type(cell_type), pointer :: cp
 type(cycle_parameters_type),pointer :: ccp
 	
@@ -265,16 +261,17 @@ cp%birthtime = 0
 cp%celltype = 1
 ityp = cp%celltype
 ccp => cc_parameters(ityp)
-Ncells_type(ityp) = Ncells_type(ityp) + 1
 cp%mitosis_duration = get_mitosis_duration()
 kcell_now = kcell
 
 ! Jaiswal
 R = par_uni(kpar)
 kfactor = 1 + (R - 0.5)*jaiswal_std
+if (single_cell) kfactor = 1
 cp%kccmd = kccmd*kfactor
 R = par_uni(kpar)
 kfactor = 1 + (R - 0.5)*jaiswal_std
+if (single_cell) kfactor = 1
 cp%kccrd = kccrd*kfactor
 
 cp%CC_act = 0
@@ -419,7 +416,7 @@ endif
 
 cp => cell_list(1)
 tIR = istep*DELTA_T/3600.0
-if (single_cell) write(nflog,'(a,f6.2,i4,5f8.3)') 'tIR,phase,progress,CC, ATR, ATM_act,fp: ',tIR,cp%phase,cp%progress,cp%CC_act,cp%ATR_act,cp%ATM_act,cp%fp
+if (single_cell .and. (cp%phase < G2_phase)) write(nflog,'(a,f6.2,i4,5f8.3)') 'tIR,phase,progress,CC, ATR, ATM_act,fp: ',tIR,cp%phase,cp%progress,cp%CC_act,cp%ATR_act,cp%ATM_act,cp%fp
 
 if (.not.is_radiation) then
 	write(nflog,'(a,f6.1)') 'Radiation dose: ',radiation_dose
@@ -484,8 +481,7 @@ if (mod(istep,nthour) == 0) then
         iph = cp%phase
         nphaseh(iph) = nphaseh(iph) + 1
     enddo
-    nphase(hour,:) = nphaseh
-	if (.not. single_cell) write(*,'(a,i6,i4,4(a,2i8))') 'istep, hour: ',istep,hour,' Ncells,nlist: ',Ncells, nlist   
+	if (.not. single_cell) write(*,'(a,i6,i4,4(a,i8))') 'istep, hour: ',istep,hour,' Ncells: ',Ncells   
     call get_phase_distribution(phase_count)
     total = sum(phase_count(1:4))
     phase_dist = 100*phase_count/total
@@ -534,7 +530,6 @@ if (SFdone) then
                 else
                     Ncont(1) = Ncont(1) + 2
                 endif
- !               write(nflog,'(i4,a,e12.3,a,e12.3)') kcell,' Pp ',Pp,' 2*Pd ',2*Pd
             else                                        ! no daughter adjustment
                 Ntot = Ntot + 1
                 SFtot = SFtot + Pp
@@ -543,7 +538,6 @@ if (SFdone) then
                 else
                     Ncont(2) = Ncont(2) + 1
                 endif
-!                write(nflog,'(i4,a,e12.3,a,e12.3)') kcell,' Pp ',Pp
             endif
         else                                            ! state = DYING, Psurvive = 0
             Ntot = Ntot + 1
@@ -558,9 +552,8 @@ if (SFdone) then
 
     SFave = SFtot/Ntot
     write(*,*)
-    write(nflog,'(a,f8.2)') 'CA_time_h: ',CA_time_h
-    write(nflog,'(a,7i6)') 'Ncont, Ndying, Ncells0: ',Ncont,Ndying,Ncont(1)/2 + Ncont(2) + (Ncont(3)/2 + Ncont(4))/2 + Ncont(5)/2
-    write(nflog,'(a,i6,2x,f8.3)') 'Ntot, SFtot: ',Ntot,SFtot
+!    write(nflog,'(a,7i6)') 'Ncont, Ndying, Ncells0: ',Ncont,Ndying,Ncont(1)/2 + Ncont(2) + (Ncont(3)/2 + Ncont(4))/2 + Ncont(5)/2
+!    write(nflog,'(a,i6,2x,f8.3)') 'Ntot, SFtot: ',Ntot,SFtot
     write(nflog,'(a,e12.4,f8.3)') 'SFave,log10(SFave): ',SFave,log10(SFave)
     write(*,'(a,e12.4,f8.3)') 'SFave,log10(SFave): ',SFave,log10(SFave)
     call completed
@@ -687,10 +680,10 @@ do kcell = 1,nlist
     if (cp%totDSB0 <= 0) cycle
     if (cp%phase0 == G1_phase) then
         ph = 1
-        if (cp%Psurvive > sfmax) then
-            sfmax = cp%Psurvive
-            kcellmax = kcell
-        endif
+        !if (cp%Psurvive > sfmax) then
+        !    sfmax = cp%Psurvive
+        !    kcellmax = kcell
+        !endif
     elseif (cp%phase0 == S_phase) then
         ph = 2
     elseif (cp%phase0 == G2_phase) then
@@ -702,18 +695,18 @@ do kcell = 1,nlist
     sftot_phase(ph) = sftot_phase(ph) + cp%Psurvive
 enddo
 nmitosis = sum(nir)
-write(*,'(a,4i6)') 'nir: ',nir
-write(nflog,'(a,6f12.3)') 'totPmit, totPaber, tottotDSB: ',totPmit, totPaber, tottotDSB
-write(*,'(a,i6,5f11.1)') 'Nmitosis, totPmit, totPaber, tottotDSB: ',int(Nmitosis),totPmit, totPaber, tottotDSB
-write(*,'(a,6e12.3)') 'totPaber: ',totPaber
-write(nflog,'(a,4f10.5)') 'SFtot_phase: ',SFtot_phase
-write(nflog,'(a,i6,f10.5)') 'Nmitosis,SFtot: ',Nmitosis,sum(SFtot_phase)
+!write(*,'(a,4i6)') 'nir: ',nir
+!write(nflog,'(a,6f12.3)') 'totPmit, totPaber, tottotDSB: ',totPmit, totPaber, tottotDSB
+!write(*,'(a,i6,5f11.1)') 'Nmitosis, totPmit, totPaber, tottotDSB: ',int(Nmitosis),totPmit, totPaber, tottotDSB
+!write(*,'(a,6e12.3)') 'totPaber: ',totPaber
+!write(nflog,'(a,4e12.3)') 'SFtot_phase: ',SFtot_phase
+!write(nflog,'(a,i6,f10.5)') 'Nmitosis,SFtot: ',Nmitosis,sum(SFtot_phase)
 ! adjust for pre-rep doubling of misjoins
 totNmisjoins(1) = 2*totNmisjoins(1)
 write(nflog,'(a,7f9.3)') 'Ave (pre, post) NDSB, Nmisjoins: ', &
     totNDSB/nmitosis,totNmisjoins/nmitosis,sum(totNmisjoins)/nmitosis
-write(*,'(a,7f9.3)') 'Ave (pre, post) NDSB, Nmisjoins: ', &
-    totNDSB/nmitosis,totNmisjoins/nmitosis,sum(totNmisjoins)/nmitosis
+!write(*,'(a,7f9.3)') 'Ave (pre, post) NDSB, Nmisjoins: ', &
+!    totNDSB/nmitosis,totNmisjoins/nmitosis,sum(totNmisjoins)/nmitosis
 
 99 continue
 if (use_synchronise) call G2_time_distribution()

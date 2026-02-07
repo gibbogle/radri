@@ -52,9 +52,9 @@ outfile = 'radri_main.out'
 
 ! Synchronisation of cell IR
 use_synchronise = .false.
-use_single = .false.    ! to simulate a cell (or cells) at a single start point in the cycle (specified synch_phase and synch_progress)
+use_single = .true.    ! to simulate a cell (or cells) at a single start point in the cycle (specified synch_phase and synch_progress)
 synch_phase = G1_phase
-synch_fraction = 0.1
+synch_fraction = 0.2
 nph = 1
 if (use_synchronise) then
     if (use_single) then

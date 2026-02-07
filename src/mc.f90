@@ -40,8 +40,7 @@ real(8) :: kmrp, kmrd               ! ATR production, decay
 real(8) :: kmccp, kmccrd, kmccmd    ! CC production, ATR-driven decay, ATM-driven decay
 real(8) :: CC_tot, ATR_tot, ATM_tot, CC_threshold, CC_threshold_factor
 logical :: use_Jaiswal = .true.
-logical :: vary_km10 = .true.
-real(8) :: jaiswal_std = 0.6
+real(8) :: jaiswal_std = 0.6        ! used to randomise kccmd, kccrd
 
 real(8) :: repRateFactor(NP)
 
@@ -65,8 +64,7 @@ real(8) :: nsup
 real(8) :: ksup     ! if ksup = 0, fsup = 1
 real(8) :: fsup
 logical :: use_suppression 
-logical :: compute_reprate3 = .true.    ! reprate3 = reprate3_2GY/dose
-real(8) :: reprate3_2GY = 0.28 
+logical :: compute_reprate3 = .true.    ! reprate3 = reprate3_max/dose
 real(8) :: reprate3_max
 
 real(8) :: next_write_time
@@ -299,7 +297,6 @@ if (phase == G1_phase) then
         Napop = Napop + 1
         Ncells = Ncells - 1
         ityp = cp%celltype
-        Ncells_type(ityp) = Ncells_type(ityp) - 1
         write(nflog,*) 'apoptotic death: ',kcell_now, phase
     endif
 endif
@@ -629,7 +626,7 @@ do it = 1,Nt
     ATM_act = min(ATM_act, ATM_tot)
     t = it*dt
 enddo
-!if (kcell_now == 9) stop
+if (single_cell .and. (iph == G2_phase)) write(nflog,'(a,7e12.4)') 'd, Kccmd,ATM,Kmccmd,dCC_act_dt, CC_act: ',d(1:2),cp%Kccmd,ATM_act,Kmccmd,dCC_act_dt, CC_act
 cp%ATM_act = ATM_act
 if (iph == G2_phase) then
     cp%CC_act = CC_act
@@ -637,7 +634,6 @@ if (iph == G2_phase) then
 elseif (iph == S_phase .and. use_ATR) then
     cp%ATR_act = ATR_act
 endif
-!t = t_simulation/3600.
 end subroutine
 
 !------------------------------------------------------------------------
@@ -916,10 +912,9 @@ end subroutine
 !------------------------------------------------------------------------
 subroutine survivalProbability(cp)
 type(cell_type), pointer :: cp
-real(8) :: DSB(NP,2), totDSB(2), Nmis(2), Nlethal(2), Paber(2), Pbase, Papop, Pmit(2), Psurv
-real(8) :: Nlethal_sum, Paber1_nodouble, Nmistot, tIR,totNmis
+real(8) :: DSB(NP,2), totDSB(2), Nmis(2), Paber(2), Pmit(2)  !, Pbase, Papop, Psurv, Nlethal(2)
+!real(8) :: Nlethal_sum, Paber1_nodouble, Nmistot, tIR,totNmis
 integer :: k, jpp, ityp
-real(8), parameter :: kmit = 1.0    !0.033  ! Baide et al., D10 = 0.1
 
 DSB = cp%DSB
 do jpp = 1,2
@@ -932,33 +927,16 @@ totNmisjoins = totNmisjoins + Nmis
 do k = 1,2
     Pmit(k) = exp(-mitRate(k)*totDSB(k))
 enddo
-if (cp%phase0 < M_phase) then   ! G1, S, G2
+if (cp%state == ALIVE) then     ! cells with IR in M were labelled DYING when divider() was called from grower()
     Paber(1) = exp(-2*Klethal*Nmis(1))
-    Paber1_nodouble = exp(-Klethal*Nmis(1))
+!    Paber1_nodouble = exp(-Klethal*Nmis(1))
     Paber(2) = exp(-Klethal*Nmis(2))
     cp%Psurvive = Pmit(1)*Pmit(2)*Paber(1)*Paber(2)  
-else    ! M_phase or dividing
-    if (drop_mitotic_cells) then
-        cp%state = DEAD
-        cp%Psurvive = 0
-        Nmitotic = Nmitotic + 1
-        ityp = cp%celltype
-        Ncells_type(ityp) = Ncells_type(ityp) - 1
-    else
-        Paber = 1
-        cp%Psurvive = exp(-kmit*sum(totDSB))
-    endif
+else    ! cells labelled as DYING (actually, they do not get here)
+    cp%Psurvive = 0     ! this cell dies at next mitosis (M2)
 endif
-tIR = (tnow - t_irradiation)/3600
-totNmis = 2*Nmis(1)+Nmis(2)
-if (cp%state /= DEAD) then
-    NPsurvive = NPsurvive + 1   ! this is the count of cells for which Psurvive has been computed
-    cp%mitosis_time = tnow      ! needed to determine if mitosis occurs before or after CA
-    cp%state = DIVIDED          ! this actually means that the cell reached division
-endif
-totPmit = totPmit + Pmit
-totPaber = totPaber + Paber
-tottotDSB = tottotDSB + sum(totDSB)
+NPsurvive = NPsurvive + 1   ! this is the count of cells for which Psurvive has been computed
+cp%mitosis_time = tnow      ! needed to determine if mitosis occurs before or after CA
 end subroutine
 
 !------------------------------------------------------------------------

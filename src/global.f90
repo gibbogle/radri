@@ -29,7 +29,7 @@ integer, parameter :: dividing      = 5
 
 integer, parameter :: nfcell=10, nfout=11, nflog=12, nfres=13
 
-integer, parameter :: MAX_CELLTYPES = 2		! only 1 is used
+integer, parameter :: MAX_CELLTYPES = 1		! only 1 is used
 integer, parameter :: max_nlist = 300000
 real(REAL_KIND), parameter :: PI = 4.0*atan(1.0)
 
@@ -83,7 +83,6 @@ type(cell_type), allocatable, target :: cell_list(:)
 integer :: initial_count
 
 integer :: nlist, Ncells, Ncells0, ncells_mphase, lastID, Ncelltypes
-integer :: Ncells_type(MAX_CELLTYPES), Ndying(MAX_CELLTYPES)
 
 type(cycle_parameters_type), target :: cc_parameters(MAX_CELLTYPES)
 
@@ -104,14 +103,13 @@ logical :: dbug = .false.
 integer :: seed(2)
 integer :: kcell_now
 
-logical :: use_synchronise   ! now set in main
+logical :: use_synchronise   ! set in main
 integer :: synch_phase
 real(REAL_KIND) :: synch_fraction
 logical :: single_cell
 
 ! DRM section
 logical :: DRM = .true.
-logical, parameter :: use_Napop = .true.   ! use count of apoptosed cells in SFave calculation - true for consistency with CA
 integer :: NPsurvive, Nirradiated, Napop, Nmitotic
 real(REAL_KIND), allocatable :: Psurvive(:)
 logical :: include_daughters = .true.
@@ -122,7 +120,6 @@ integer :: nphase_hours, next_phase_hour
 real(REAL_KIND) :: phase_dist(0:4)    ! % of cells in each phase
 real(REAL_KIND) :: recorded_phase_dist(60,0:4)   ! % of cells in each phase phase_hour after IR
 real(REAL_KIND) :: recorded_DNA_rate(60)         ! average S-phase DNA rate in each phase_hour after IR
-integer, allocatable :: nphase(:,:)
 real(REAL_KIND) :: totNmis = 0
 integer :: maxhours = 199
 logical :: overstepped
@@ -150,13 +147,6 @@ logical :: suppress_ATR
 
 logical :: test_run = .false.	! to check Psurvive etc
 LOGICAL :: use_no_random = .false.	! to turn off variation in cycle time, DSB_Gy
-
-
-! DEBUGGING
-integer :: tracked1(500)
-integer :: ntrack1 = 0
-integer :: tracked2(500)
-integer :: ntrack2 = 0
 
 !DEC$ ATTRIBUTES DLLEXPORT :: nsteps, use_synchronise, synch_phase, synch_fraction
 contains
